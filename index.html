@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>家計管理アプリ - 統合版</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <nav>
+        <a onclick="showPage('record')">支出記録</a>
+        <a onclick="showPage('summary')">月別集計</a>
+        <a onclick="showPage('budget')">予算管理</a>
+        <a onclick="showPage('analysis')">比較分析</a>
+        <a onclick="showPage('settings')">設定</a>
+    </nav>
+
+    <main>
+        <section id="page-record" class="page-content active">
+            <h1>支出記録</h1>
+            <form id="expense-form">
+                <div class="input-group">
+                    <label for="date">日付</label>
+                    <input type="date" id="date" required>
+                </div>
+
+                <div class="input-group">
+                    <label for="amount">金額 (円)</label>
+                    <input type="number" id="amount" placeholder="1000" required>
+                </div>
+
+                <div class="input-group">
+                    <label for="category">カテゴリ</label>
+                    <select id="category" required>
+                        <option value="">選択してください</option>
+                    </select>
+                </div>
+
+                <div class="input-group">
+                    <label>費目タイプ</label>
+                    <div id="type-display">--</div>
+                </div>
+
+                <div class="input-group">
+                    <label for="memo">メモ(任意)</label>
+                    <input type="text" id="memo" placeholder="スーパーで購入">
+                </div>
+
+                <button type="submit" id="save-button">記録する</button>
+            </form>
+
+            <section style="margin-top: 40px; border-top: 2px solid #eee; padding-top: 20px;">
+                <h2 style="font-size: 1.2rem; color: #7f8c8d; margin-bottom: 15px;">最近の記録（直近5件）</h2>
+                <div class="detail-section">
+                    <table class="report-table">
+                        <thead>
+                            <tr>
+                                <th>日付</th>
+                                <th>カテゴリ</th>
+                                <th>メモ</th>
+                                <th class="text-right">金額</th>
+                                <th style="text-align: center;">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recent-records-list">
+                            </tbody>
+                    </table>
+                </div>
+            </section>
+        </section>
+
+        <section id="page-summary" class="page-content">
+            <h1>月別集計</h1>
+            <section class="month-selector">
+                <div class="input-group">
+                    <label for="view-month">表示月を選択</label>
+                    <input type="month" id="view-month">
+                </div>
+            </section>
+
+            <section class="summary-grid">
+                <div class="summary-card total">
+                    <div class="card-content">
+                        <div class="card-label">総合計</div>
+                        <div id="total-amount" class="card-value">0円</div>
+                    </div>
+                    <div class="card-chart">
+                        <canvas id="chart-total"></canvas>
+                    </div>
+                </div>
+                <div class="summary-card fixed">
+                    <div class="card-content">
+                        <div class="card-label">固定費 内訳</div>
+                        <div id="fixed-total" class="card-value">0円</div>
+                    </div>
+                    <div class="card-chart">
+                        <canvas id="chart-fixed"></canvas>
+                    </div>
+                </div>
+                <div class="summary-card variable">
+                    <div class="card-content">
+                        <div class="card-label">変動費 内訳</div>
+                        <div id="variable-total" class="card-value">0円</div>
+                    </div>
+                    <div class="card-chart">
+                        <canvas id="chart-variable"></canvas>
+                    </div>
+                </div>
+            </section>
+
+            <section class="detail-section">
+                <h2>今月の明細</h2>
+                <table class="report-table">
+                    <thead>
+                        <tr>
+                            <th>日付</th>
+                            <th>カテゴリ</th>
+                            <th>メモ</th>
+                            <th class="text-right">金額</th>
+                        </tr>
+                    </thead>
+                    <tbody id="record-list">
+                        </tbody>
+                </table>
+            </section>
+        </section>
+
+        <section id="page-budget" class="page-content">
+            <h1>予算管理</h1>
+            <p>予算管理機能を開発中です。</p>
+        </section>
+
+        <section id="page-analysis" class="page-content">
+            <h1>比較分析</h1>
+            <p>比較分析機能を開発中です。</p>
+        </section>
+
+        <section id="page-settings" class="page-content">
+            <h1>設定・マスター管理</h1>
+            <section>
+                <h2>カテゴリの追加</h2>
+                <div class="input-group">
+                    <label for="new-category-name">カテゴリ名</label>
+                    <input type="text" id="new-category-name" placeholder="例：家賃">
+                </div>
+                
+                <div class="input-group">
+                    <label for="new-category-type">費目タイプ</label>
+                    <select id="new-category-type">
+                        <option value="変動費">変動費</option>
+                        <option value="固定費">固定費</option>
+                    </select>
+                </div>
+                
+                <button id="add-category-button">カテゴリを追加する</button>
+            </section>
+
+            <section style="margin-top: 30px;">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <h2>登録済みカテゴリ</h2>
+                    <button id="edit-mode-toggle" style="background-color: #34495e; width: auto; padding: 5px 15px;">カテゴリを整理する</button>
+                </div>
+                <ul id="category-list" class="edit-off"></ul>
+            </section>
+        </section>
+    </main>
+
+    <script src="main.js"></script>
+</body>
+</html>
