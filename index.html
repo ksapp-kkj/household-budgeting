@@ -62,13 +62,11 @@
                             <tr>
                                 <th>日付</th>
                                 <th>カテゴリ</th>
-                                <th>メモ</th>
                                 <th class="text-right">金額</th>
                                 <th style="text-align: center;">操作</th>
                             </tr>
                         </thead>
-                        <tbody id="recent-records-list">
-                            </tbody>
+                        <tbody id="recent-records-list"></tbody>
                     </table>
                 </div>
             </section>
@@ -120,12 +118,11 @@
                         <tr>
                             <th>日付</th>
                             <th>カテゴリ</th>
-                            <th>メモ</th>
                             <th class="text-right">金額</th>
+                            <th style="text-align: center;">詳細</th>
                         </tr>
                     </thead>
-                    <tbody id="record-list">
-                        </tbody>
+                    <tbody id="record-list"></tbody>
                 </table>
             </section>
         </section>
@@ -169,6 +166,37 @@
             </section>
         </section>
     </main>
+
+    <div id="edit-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2>記録の編集・詳細</h2>
+            <form id="edit-form">
+                <input type="hidden" id="edit-id">
+                <div class="input-group">
+                    <label>日付</label>
+                    <input type="date" id="edit-date" required>
+                </div>
+                <div class="input-group">
+                    <label>金額 (円)</label>
+                    <input type="number" id="edit-amount" required>
+                </div>
+                <div class="input-group">
+                    <label>カテゴリ</label>
+                    <select id="edit-category" required></select>
+                </div>
+                <div class="input-group">
+                    <label>メモ</label>
+                    <input type="text" id="edit-memo">
+                </div>
+                
+                <div class="modal-actions">
+                    <button type="button" id="update-button" style="background-color: #3498db;">更新する</button>
+                    <button type="button" id="delete-button" style="background-color: #e74c3c;">この記録を削除</button>
+                    <button type="button" id="close-modal-button" style="background-color: #95a5a6;">閉じる</button>
+                </div>
+            </form>
+        </div>
+    </div>
 
     <script src="main.js"></script>
 </body>
