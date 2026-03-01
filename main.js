@@ -1,28 +1,24 @@
-// main.js - 統合・画面切り替え対応版
+// main.js - 統合・整理版
 
 const STORAGE_KEY_CATEGORIES = 'household_categories';
 const STORAGE_KEY_RECORDS = 'household_records';
 
-// グラフのインスタンスを保持
 let charts = {};
+
+// --- データ取得ヘルパー ---
+const getRecords = () => JSON.parse(localStorage.getItem(STORAGE_KEY_RECORDS) || '[]');
+const getCategories = () => JSON.parse(localStorage.getItem(STORAGE_KEY_CATEGORIES) || '[]');
+const saveRecords = (records) => localStorage.setItem(STORAGE_KEY_RECORDS, JSON.stringify(records));
 
 /**
  * 画面切り替え制御
- * @param {string} pageId - 表示したいセクションのID (record, summary, budget, analysis, settings)
  */
 function showPage(pageId) {
-    // すべてのセクションを非表示にする
-    document.querySelectorAll('.page-content').forEach(section => {
-        section.classList.remove('active');
-    });
-
-    // 指定されたセクションを表示
+    document.querySelectorAll('.page-content').forEach(section => section.classList.remove('active'));
     const activeSection = document.getElementById('page-' + pageId);
-    if (activeSection) {
-        activeSection.classList.add('active');
-    }
+    if (activeSection) activeSection.classList.add('active');
 
-    // 各画面に応じた初期化処理を呼び出す
+    // 初期化が必要なページのみ実行
     if (pageId === 'record') {
         updateCategorySelect();
         showHistory();
@@ -34,93 +30,75 @@ function showPage(pageId) {
 }
 
 /**
- * ページ読み込み時の初期化
+ * 共通：表示の全体更新
  */
+function refreshUI() {
+    showHistory();
+    const summaryPage = document.getElementById('page-summary');
+    if (summaryPage.classList.contains('active')) {
+        const monthInput = document.getElementById('view-month');
+        renderSummary(monthInput.value);
+    }
+}
+
+// ==========================================
+// 初期化
+// ==========================================
 window.addEventListener('DOMContentLoaded', () => {
-    console.log("家計管理アプリ 統合版 起動");
-    
-    // 起動時は「支出記録」画面を表示
     showPage('record');
-    
-    // 記録フォームのイベントリスナーは一度だけ登録
     initRecordPage();
+    initModalEvents();
 });
 
 // ==========================================
-// 支出記録（record）ロジック
+// 支出記録（record）
 // ==========================================
 
 function updateCategorySelect() {
     const categorySelect = document.getElementById('category');
     const typeDisplay = document.getElementById('type-display');
-    const categories = JSON.parse(localStorage.getItem(STORAGE_KEY_CATEGORIES) || '[]');
+    const categories = getCategories();
 
     categorySelect.innerHTML = '<option value="">選択してください</option>';
-
     categories.forEach(cat => {
-        const option = document.createElement('option');
-        option.value = cat.name;
-        option.textContent = cat.name;
-        option.setAttribute('data-type', cat.type);
-        categorySelect.appendChild(option);
+        const option = new Option(cat.name, cat.name);
+        option.dataset.type = cat.type;
+        categorySelect.add(option);
     });
 
     categorySelect.onchange = () => {
-        const selectedOption = categorySelect.options[categorySelect.selectedIndex];
-        const type = selectedOption ? selectedOption.getAttribute('data-type') : '--';
-        typeDisplay.textContent = type || '--';
-        
-        // 色分け
-        if (type === '固定費') {
-            typeDisplay.style.color = '#e74c3c';
-        } else if (type === '変動費') {
-            typeDisplay.style.color = '#2980b9';
-        } else {
-            typeDisplay.style.color = '#333';
-        }
+        const type = categorySelect.selectedOptions[0]?.dataset.type || '--';
+        typeDisplay.textContent = type;
+        typeDisplay.style.color = type === '固定費' ? '#e74c3c' : (type === '変動費' ? '#2980b9' : '#333');
     };
 }
 
 function initRecordPage() {
-    const saveButton = document.getElementById('save-button');
     const dateInput = document.getElementById('date');
-    const amountInput = document.getElementById('amount');
-    const categorySelect = document.getElementById('category');
-    const memoInput = document.getElementById('memo');
-
     dateInput.value = new Date().toLocaleDateString('sv-SE');
 
-    saveButton.onclick = (e) => {
+    document.getElementById('expense-form').onsubmit = (e) => {
         e.preventDefault();
-
-        const amount = parseInt(amountInput.value);
-        const category = categorySelect.value;
+        const amount = parseInt(document.getElementById('amount').value);
+        const category = document.getElementById('category').value;
         const type = document.getElementById('type-display').textContent;
 
-        if (!dateInput.value || isNaN(amount) || amount <= 0 || !category) {
-            alert("日付、金額、カテゴリを正しく入力してください。");
-            return;
-        }
+        if (!category || isNaN(amount)) return alert("正しく入力してください");
 
-        const newRecord = {
+        const records = getRecords();
+        records.push({
             id: Date.now(),
             date: dateInput.value,
             amount: amount,
             category: category,
             type: type,
-            memo: memoInput.value
-        };
+            memo: document.getElementById('memo').value
+        });
 
-        const records = JSON.parse(localStorage.getItem(STORAGE_KEY_RECORDS) || '[]');
-        records.push(newRecord);
-        localStorage.setItem(STORAGE_KEY_RECORDS, JSON.stringify(records));
-
-        showHistory();
-
-        // 入力クリア
-        amountInput.value = "";
-        memoInput.value = "";
-        categorySelect.selectedIndex = 0;
+        saveRecords(records);
+        refreshUI();
+        e.target.reset();
+        dateInput.value = new Date().toLocaleDateString('sv-SE');
         document.getElementById('type-display').textContent = "--";
     };
 }
@@ -129,24 +107,21 @@ function showHistory() {
     const list = document.getElementById('recent-records-list');
     if (!list) return;
 
-    const records = JSON.parse(localStorage.getItem(STORAGE_KEY_RECORDS) || '[]');
-    const latest = records.sort((a, b) => b.id - a.id).slice(0, 5);
-    
-    list.innerHTML = latest.map(r => `
+    const records = getRecords().sort((a, b) => b.id - a.id).slice(0, 5);
+    list.innerHTML = records.map(r => `
         <tr>
             <td>${r.date.substring(5)}</td>
             <td><strong>${r.category}</strong></td>
-            <td style="color: #888; font-size: 0.85rem;">${r.memo || '-'}</td>
             <td class="text-right" style="font-weight:bold;">${r.amount.toLocaleString()}円</td>
             <td style="text-align: center;">
-                <button onclick="deleteItem(${r.id})" style="background-color: #e74c3c; width: auto; padding: 4px 12px; margin: 0; font-size: 0.8rem;">削除</button>
+                <button onclick="openModal(${r.id})" style="background-color: #3498db; width: auto; padding: 4px 12px; margin: 0; font-size: 0.8rem;">編集</button>
             </td>
         </tr>
     `).join("");
 }
 
 // ==========================================
-// 月別集計（summary）ロジック
+// 月別集計（summary）
 // ==========================================
 
 function initSummaryPage() {
@@ -155,65 +130,51 @@ function initSummaryPage() {
         const now = new Date();
         monthInput.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     }
-
     monthInput.onchange = () => renderSummary(monthInput.value);
     renderSummary(monthInput.value);
 }
 
 function renderSummary(targetMonth) {
-    const records = JSON.parse(localStorage.getItem(STORAGE_KEY_RECORDS) || '[]');
+    const records = getRecords().filter(r => r.date.startsWith(targetMonth));
     const recordList = document.getElementById('record-list');
-    const totalDisp = document.getElementById('total-amount');
-    const fixedDisp = document.getElementById('fixed-total');
-    const variableDisp = document.getElementById('variable-total');
+    
+    let stats = { total: 0, fixed: 0, variable: 0 };
+    let details = { fixed: {}, variable: {} };
 
-    let total = 0, fixed = 0, variable = 0;
-    let fixedDetails = {}; 
-    let variableDetails = {};
+    recordList.innerHTML = records.sort((a, b) => new Date(a.date) - new Date(b.date)).map(r => {
+        stats.total += r.amount;
+        const group = r.type === '固定費' ? 'fixed' : 'variable';
+        stats[group] += r.amount;
+        details[group][r.category] = (details[group][r.category] || 0) + r.amount;
 
-    recordList.innerHTML = "";
-
-    const filteredRecords = records
-        .filter(r => r.date.startsWith(targetMonth))
-        .sort((a, b) => new Date(a.date) - new Date(b.date));
-
-    filteredRecords.forEach(r => {
-        total += r.amount;
-        if (r.type === '固定費') {
-            fixed += r.amount;
-            fixedDetails[r.category] = (fixedDetails[r.category] || 0) + r.amount;
-        } else {
-            variable += r.amount;
-            variableDetails[r.category] = (variableDetails[r.category] || 0) + r.amount;
-        }
-
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td>${r.date.split('-')[2]}日</td>
-            <td>${r.category}</td>
-            <td style="color: #666; font-size: 0.9rem;">${r.memo || '-'}</td>
-            <td class="text-right" style="font-weight: bold;">${r.amount.toLocaleString()}円</td>
+        return `
+            <tr>
+                <td>${r.date.split('-')[2]}日</td>
+                <td>${r.category}</td>
+                <td class="text-right" style="font-weight: bold;">${r.amount.toLocaleString()}円</td>
+                <td style="text-align: center;">
+                    <button onclick="openModal(${r.id})" style="background-color: #95a5a6; width: auto; padding: 4px 12px; margin: 0; font-size: 0.8rem;">詳細</button>
+                </td>
+            </tr>
         `;
-        recordList.appendChild(tr);
-    });
+    }).join("");
 
-    updateChart('chart-total', ['固定費', '変動費'], [fixed, variable], ['#ffffff', 'rgba(255,255,255,0.4)']);
-    updateChart('chart-fixed', Object.keys(fixedDetails), Object.values(fixedDetails));
-    updateChart('chart-variable', Object.keys(variableDetails), Object.values(variableDetails));
+    updateChart('chart-total', ['固定費', '変動費'], [stats.fixed, stats.variable], ['#ffffff', 'rgba(255,255,255,0.4)']);
+    updateChart('chart-fixed', Object.keys(details.fixed), Object.values(details.fixed));
+    updateChart('chart-variable', Object.keys(details.variable), Object.values(details.variable));
 
-    totalDisp.textContent = `${total.toLocaleString()}円`;
-    fixedDisp.textContent = `${fixed.toLocaleString()}円`;
-    variableDisp.textContent = `${variable.toLocaleString()}円`;
+    document.getElementById('total-amount').textContent = `${stats.total.toLocaleString()}円`;
+    document.getElementById('fixed-total').textContent = `${stats.fixed.toLocaleString()}円`;
+    document.getElementById('variable-total').textContent = `${stats.variable.toLocaleString()}円`;
 }
 
 function updateChart(canvasId, labels, data, customColors = null) {
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
     if (charts[canvasId]) charts[canvasId].destroy();
-    if (data.length === 0 || data.every(v => v === 0)) return;
+    if (!data.length || data.every(v => v === 0)) return;
 
-    charts[canvasId] = new Chart(ctx, {
+    charts[canvasId] = new Chart(canvas.getContext('2d'), {
         type: 'doughnut',
         data: {
             labels: labels,
@@ -228,85 +189,119 @@ function updateChart(canvasId, labels, data, customColors = null) {
 }
 
 // ==========================================
-// 設定画面（settings）ロジック
+// モーダル（編集・詳細）
+// ==========================================
+
+function openModal(id) {
+    const record = getRecords().find(r => r.id === id);
+    if (!record) return;
+
+    document.getElementById('edit-id').value = record.id;
+    document.getElementById('edit-date').value = record.date;
+    document.getElementById('edit-amount').value = record.amount;
+    document.getElementById('edit-memo').value = record.memo || "";
+
+    const editCatSelect = document.getElementById('edit-category');
+    editCatSelect.innerHTML = getCategories().map(c => `<option value="${c.name}">${c.name}</option>`).join("");
+    editCatSelect.value = record.category;
+
+    document.getElementById('edit-modal').style.display = 'flex';
+}
+
+function closeModal() {
+    document.getElementById('edit-modal').style.display = 'none';
+}
+
+function initModalEvents() {
+    document.getElementById('update-button').onclick = () => {
+        const id = parseInt(document.getElementById('edit-id').value);
+        let records = getRecords();
+        const index = records.findIndex(r => r.id === id);
+
+        if (index !== -1) {
+            const category = document.getElementById('edit-category').value;
+            const catInfo = getCategories().find(c => c.name === category);
+            
+            records[index] = {
+                ...records[index],
+                date: document.getElementById('edit-date').value,
+                amount: parseInt(document.getElementById('edit-amount').value),
+                category: category,
+                memo: document.getElementById('edit-memo').value,
+                type: catInfo ? catInfo.type : "--"
+            };
+
+            saveRecords(records);
+            refreshUI();
+            closeModal();
+        }
+    };
+
+    document.getElementById('delete-button').onclick = () => {
+        const id = parseInt(document.getElementById('edit-id').value);
+        if (!confirm("削除しますか？")) return;
+        let records = getRecords().filter(r => r.id !== id);
+        saveRecords(records);
+        refreshUI();
+        closeModal();
+    };
+
+    document.getElementById('close-modal-button').onclick = closeModal;
+}
+
+// ==========================================
+// 設定画面（settings）
 // ==========================================
 
 function initSettingsPage() {
-    const addButton = document.getElementById('add-category-button');
-    const nameInput = document.getElementById('new-category-name');
-    const typeSelect = document.getElementById('new-category-type');
     const listContainer = document.getElementById('category-list');
-    const toggleBtn = document.getElementById('edit-mode-toggle');
-
     displayCategories();
 
-    toggleBtn.onclick = () => {
+    document.getElementById('edit-mode-toggle').onclick = (e) => {
+        const isEdit = listContainer.classList.toggle('edit-on');
         listContainer.classList.toggle('edit-off');
-        listContainer.classList.toggle('edit-on');
-        toggleBtn.textContent = listContainer.classList.contains('edit-on') ? '整理を完了する' : 'カテゴリを整理する';
-        toggleBtn.classList.toggle('active');
+        e.target.textContent = isEdit ? '整理を完了する' : 'カテゴリを整理する';
+        e.target.classList.toggle('active');
     };
 
     if (typeof Sortable !== 'undefined' && !listContainer.dataset.sortableInit) {
-        new Sortable(listContainer, {
-            animation: 150,
-            ghostClass: 'sortable-ghost',
-            onEnd: saveCurrentOrder
-        });
+        new Sortable(listContainer, { animation: 150, ghostClass: 'sortable-ghost', onEnd: saveCategoryOrder });
         listContainer.dataset.sortableInit = "true";
     }
 
-    addButton.onclick = () => {
-        const name = nameInput.value.trim();
-        if (name === "") return;
-        const categories = JSON.parse(localStorage.getItem(STORAGE_KEY_CATEGORIES) || '[]');
-        categories.push({ name: name, type: typeSelect.value });
+    document.getElementById('add-category-button').onclick = () => {
+        const name = document.getElementById('new-category-name').value.trim();
+        if (!name) return;
+        const categories = getCategories();
+        categories.push({ name, type: document.getElementById('new-category-type').value });
         localStorage.setItem(STORAGE_KEY_CATEGORIES, JSON.stringify(categories));
-        nameInput.value = "";
+        document.getElementById('new-category-name').value = "";
         displayCategories();
     };
 }
 
 function displayCategories() {
-    const categories = JSON.parse(localStorage.getItem(STORAGE_KEY_CATEGORIES) || '[]');
     const listContainer = document.getElementById('category-list');
-    listContainer.innerHTML = categories.map((cat, index) => `
+    listContainer.innerHTML = getCategories().map((cat, i) => `
         <li data-name="${cat.name}" data-type="${cat.type}">
             <span><i class="drag-handle">☰</i> <strong>${cat.name}</strong> (${cat.type})</span>
-            <button class="delete-btn" onclick="deleteCategory(${index})">削除</button>
+            <button class="delete-btn" onclick="deleteCategory(${i})">削除</button>
         </li>
     `).join("");
 }
 
-function saveCurrentOrder() {
-    const listContainer = document.getElementById('category-list');
-    const newCategories = Array.from(listContainer.querySelectorAll('li')).map(li => ({
-        name: li.getAttribute('data-name'),
-        type: li.getAttribute('data-type')
+function saveCategoryOrder() {
+    const newCategories = Array.from(document.querySelectorAll('#category-list li')).map(li => ({
+        name: li.dataset.name,
+        type: li.dataset.type
     }));
     localStorage.setItem(STORAGE_KEY_CATEGORIES, JSON.stringify(newCategories));
 }
 
-// ==========================================
-// 削除用グローバル関数
-// ==========================================
-
 window.deleteCategory = (index) => {
     if (!confirm("削除しますか？")) return;
-    const categories = JSON.parse(localStorage.getItem(STORAGE_KEY_CATEGORIES) || '[]');
+    const categories = getCategories();
     categories.splice(index, 1);
     localStorage.setItem(STORAGE_KEY_CATEGORIES, JSON.stringify(categories));
     displayCategories();
-};
-
-window.deleteItem = (id) => {
-    if (!confirm("記録を削除しますか？")) return;
-    let records = JSON.parse(localStorage.getItem(STORAGE_KEY_RECORDS) || '[]');
-    records = records.filter(r => r.id !== id);
-    localStorage.setItem(STORAGE_KEY_RECORDS, JSON.stringify(records));
-    showHistory();
-    // 集計画面が表示中なら更新
-    if (document.getElementById('page-summary').classList.contains('active')) {
-        renderSummary(document.getElementById('view-month').value);
-    }
 };
