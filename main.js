@@ -1,63 +1,94 @@
-// main.js - 統合・整理版
+// main.js - Firebase クラウドデータベース対応版
 
-const STORAGE_KEY_CATEGORIES = 'household_categories';
-const STORAGE_KEY_RECORDS = 'household_records';
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
+import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, updateDoc, setDoc, getDoc, query, orderBy } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
+
+// ご自身のFirebaseプロジェクト設定情報
+const firebaseConfig = {
+  apiKey: "AIzaSyAyBFPe2br0E_Nubc1ZYMGoTMh09vEKVCw",
+  authDomain: "family-portal-79822.firebaseapp.com",
+  projectId: "family-portal-79822",
+  storageBucket: "family-portal-79822.firebasestorage.app",
+  messagingSenderId: "825094653178",
+  appId: "1:825094653178:web:9e5f8ca95889a4fb44b543"
+};
+
+// Firebaseの初期化
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
 
 let charts = {};
 
-// --- データ取得ヘルパー ---
-const getRecords = () => JSON.parse(localStorage.getItem(STORAGE_KEY_RECORDS) || '[]');
-const getCategories = () => JSON.parse(localStorage.getItem(STORAGE_KEY_CATEGORIES) || '[]');
-const saveRecords = (records) => localStorage.setItem(STORAGE_KEY_RECORDS, JSON.stringify(records));
+// ==========================================
+// Firebase データ通信ヘルパー
+// ==========================================
 
-/**
- * 画面切り替え制御
- */
-function showPage(pageId) {
+// 支出記録の取得
+async function getRecords() {
+    // 作成日時の新しい順に並べて取得
+    const q = query(collection(db, "records"), orderBy("createdAt", "desc"));
+    const snapshot = await getDocs(q);
+    // データを扱いやすい配列に変換（各データに固有のIDを持たせる）
+    return snapshot.docs.map(doc => ({ docId: doc.id, ...doc.data() }));
+}
+
+// カテゴリ一覧の取得
+async function getCategories() {
+    const docRef = doc(db, "settings", "categories");
+    const docSnap = await getDoc(docRef);
+    return docSnap.exists() ? docSnap.data().list : [];
+}
+
+// カテゴリ一覧の保存
+async function saveCategories(categories) {
+    await setDoc(doc(db, "settings", "categories"), { list: categories });
+}
+
+// ==========================================
+// 画面切り替え制御
+// ==========================================
+
+// HTMLから直接呼ばれる関数は window オブジェクトに登録する必要があります
+window.showPage = async (pageId) => {
     document.querySelectorAll('.page-content').forEach(section => section.classList.remove('active'));
     const activeSection = document.getElementById('page-' + pageId);
     if (activeSection) activeSection.classList.add('active');
 
-    // 初期化が必要なページのみ実行
+    // ページが開かれるたびにクラウドから最新データを取得
     if (pageId === 'record') {
-        updateCategorySelect();
-        showHistory();
+        await updateCategorySelect();
+        await showHistory();
     } else if (pageId === 'summary') {
-        initSummaryPage();
+        await initSummaryPage();
     } else if (pageId === 'settings') {
-        initSettingsPage();
+        await initSettingsPage();
     }
-}
+};
 
-/**
- * 共通：表示の全体更新
- */
-function refreshUI() {
-    showHistory();
+async function refreshUI() {
+    await showHistory();
     const summaryPage = document.getElementById('page-summary');
     if (summaryPage.classList.contains('active')) {
         const monthInput = document.getElementById('view-month');
-        renderSummary(monthInput.value);
+        await renderSummary(monthInput.value);
     }
 }
 
-// ==========================================
-// 初期化
-// ==========================================
-window.addEventListener('DOMContentLoaded', () => {
-    showPage('record');
+// アプリ起動時の処理
+window.addEventListener('DOMContentLoaded', async () => {
     initRecordPage();
     initModalEvents();
+    await window.showPage('record');
 });
 
 // ==========================================
-// 支出記録（record）
+// 支出記録画面
 // ==========================================
 
-function updateCategorySelect() {
+async function updateCategorySelect() {
     const categorySelect = document.getElementById('category');
     const typeDisplay = document.getElementById('type-display');
-    const categories = getCategories();
+    const categories = await getCategories();
 
     categorySelect.innerHTML = '<option value="">選択してください</option>';
     categories.forEach(cat => {
@@ -77,7 +108,7 @@ function initRecordPage() {
     const dateInput = document.getElementById('date');
     dateInput.value = new Date().toLocaleDateString('sv-SE');
 
-    document.getElementById('expense-form').onsubmit = (e) => {
+    document.getElementById('expense-form').onsubmit = async (e) => {
         e.preventDefault();
         const amount = parseInt(document.getElementById('amount').value);
         const category = document.getElementById('category').value;
@@ -85,57 +116,67 @@ function initRecordPage() {
 
         if (!category || isNaN(amount)) return alert("正しく入力してください");
 
-        const records = getRecords();
-        records.push({
-            id: Date.now(),
+        // 通信中はボタンを「保存中」にする
+        const submitBtn = document.getElementById('save-button');
+        submitBtn.disabled = true;
+        submitBtn.textContent = "保存中...";
+
+        // Firebaseへの保存
+        await addDoc(collection(db, "records"), {
             date: dateInput.value,
             amount: amount,
             category: category,
             type: type,
-            memo: document.getElementById('memo').value
+            memo: document.getElementById('memo').value,
+            createdAt: Date.now() // 並べ替え用
         });
 
-        saveRecords(records);
-        refreshUI();
+        await refreshUI();
         e.target.reset();
         dateInput.value = new Date().toLocaleDateString('sv-SE');
         document.getElementById('type-display').textContent = "--";
+
+        submitBtn.disabled = false;
+        submitBtn.textContent = "記録する";
     };
 }
 
-function showHistory() {
+async function showHistory() {
     const list = document.getElementById('recent-records-list');
     if (!list) return;
 
-    const records = getRecords().sort((a, b) => b.id - a.id).slice(0, 5);
-    list.innerHTML = records.map(r => `
+    const records = await getRecords();
+    const latest = records.slice(0, 5);
+
+    list.innerHTML = latest.map(r => `
         <tr>
             <td>${r.date.substring(5)}</td>
             <td><strong>${r.category}</strong></td>
             <td class="text-right" style="font-weight:bold;">${r.amount.toLocaleString()}円</td>
             <td style="text-align: center;">
-                <button onclick="openModal(${r.id})" style="background-color: #3498db; width: auto; padding: 4px 12px; margin: 0; font-size: 0.8rem;">編集</button>
+                <button onclick="openModal('${r.docId}')" style="background-color: #3498db; width: auto; padding: 4px 12px; margin: 0; font-size: 0.8rem;">編集</button>
             </td>
         </tr>
     `).join("");
 }
 
 // ==========================================
-// 月別集計（summary）
+// 月別集計画面
 // ==========================================
 
-function initSummaryPage() {
+async function initSummaryPage() {
     const monthInput = document.getElementById('view-month');
     if (!monthInput.value) {
         const now = new Date();
         monthInput.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     }
-    monthInput.onchange = () => renderSummary(monthInput.value);
-    renderSummary(monthInput.value);
+    monthInput.onchange = async () => await renderSummary(monthInput.value);
+    await renderSummary(monthInput.value);
 }
 
-function renderSummary(targetMonth) {
-    const records = getRecords().filter(r => r.date.startsWith(targetMonth));
+async function renderSummary(targetMonth) {
+    const allRecords = await getRecords();
+    const records = allRecords.filter(r => r.date.startsWith(targetMonth));
     const recordList = document.getElementById('record-list');
     
     let stats = { total: 0, fixed: 0, variable: 0 };
@@ -153,7 +194,7 @@ function renderSummary(targetMonth) {
                 <td>${r.category}</td>
                 <td class="text-right" style="font-weight: bold;">${r.amount.toLocaleString()}円</td>
                 <td style="text-align: center;">
-                    <button onclick="openModal(${r.id})" style="background-color: #95a5a6; width: auto; padding: 4px 12px; margin: 0; font-size: 0.8rem;">詳細</button>
+                    <button onclick="openModal('${r.docId}')" style="background-color: #95a5a6; width: auto; padding: 4px 12px; margin: 0; font-size: 0.8rem;">詳細</button>
                 </td>
             </tr>
         `;
@@ -171,10 +212,11 @@ function renderSummary(targetMonth) {
 function updateChart(canvasId, labels, data, customColors = null) {
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
+    const ctx = canvas.getContext('2d');
     if (charts[canvasId]) charts[canvasId].destroy();
     if (!data.length || data.every(v => v === 0)) return;
 
-    charts[canvasId] = new Chart(canvas.getContext('2d'), {
+    charts[canvasId] = new Chart(ctx, {
         type: 'doughnut',
         data: {
             labels: labels,
@@ -189,60 +231,60 @@ function updateChart(canvasId, labels, data, customColors = null) {
 }
 
 // ==========================================
-// モーダル（編集・詳細）
+// 編集・詳細モーダル
 // ==========================================
 
-function openModal(id) {
-    const record = getRecords().find(r => r.id === id);
+window.openModal = async (docId) => {
+    const records = await getRecords();
+    const record = records.find(r => r.docId === docId);
     if (!record) return;
 
-    document.getElementById('edit-id').value = record.id;
+    document.getElementById('edit-id').value = record.docId; 
     document.getElementById('edit-date').value = record.date;
     document.getElementById('edit-amount').value = record.amount;
     document.getElementById('edit-memo').value = record.memo || "";
 
     const editCatSelect = document.getElementById('edit-category');
-    editCatSelect.innerHTML = getCategories().map(c => `<option value="${c.name}">${c.name}</option>`).join("");
+    const categories = await getCategories();
+    editCatSelect.innerHTML = categories.map(c => `<option value="${c.name}">${c.name}</option>`).join("");
     editCatSelect.value = record.category;
 
     document.getElementById('edit-modal').style.display = 'flex';
-}
+};
 
 function closeModal() {
     document.getElementById('edit-modal').style.display = 'none';
 }
 
 function initModalEvents() {
-    document.getElementById('update-button').onclick = () => {
-        const id = parseInt(document.getElementById('edit-id').value);
-        let records = getRecords();
-        const index = records.findIndex(r => r.id === id);
+    document.getElementById('update-button').onclick = async () => {
+        const docId = document.getElementById('edit-id').value;
+        const category = document.getElementById('edit-category').value;
+        
+        const categories = await getCategories();
+        const catInfo = categories.find(c => c.name === category);
 
-        if (index !== -1) {
-            const category = document.getElementById('edit-category').value;
-            const catInfo = getCategories().find(c => c.name === category);
-            
-            records[index] = {
-                ...records[index],
-                date: document.getElementById('edit-date').value,
-                amount: parseInt(document.getElementById('edit-amount').value),
-                category: category,
-                memo: document.getElementById('edit-memo').value,
-                type: catInfo ? catInfo.type : "--"
-            };
+        // Firebaseのデータを更新
+        await updateDoc(doc(db, "records", docId), {
+            date: document.getElementById('edit-date').value,
+            amount: parseInt(document.getElementById('edit-amount').value),
+            category: category,
+            memo: document.getElementById('edit-memo').value,
+            type: catInfo ? catInfo.type : "--"
+        });
 
-            saveRecords(records);
-            refreshUI();
-            closeModal();
-        }
+        await refreshUI();
+        closeModal();
     };
 
-    document.getElementById('delete-button').onclick = () => {
-        const id = parseInt(document.getElementById('edit-id').value);
-        if (!confirm("削除しますか？")) return;
-        let records = getRecords().filter(r => r.id !== id);
-        saveRecords(records);
-        refreshUI();
+    document.getElementById('delete-button').onclick = async () => {
+        const docId = document.getElementById('edit-id').value;
+        if (!confirm("本当に削除しますか？")) return;
+        
+        // Firebaseから削除
+        await deleteDoc(doc(db, "records", docId));
+        
+        await refreshUI();
         closeModal();
     };
 
@@ -250,12 +292,12 @@ function initModalEvents() {
 }
 
 // ==========================================
-// 設定画面（settings）
+// 設定画面（カテゴリ管理）
 // ==========================================
 
-function initSettingsPage() {
+async function initSettingsPage() {
     const listContainer = document.getElementById('category-list');
-    displayCategories();
+    await displayCategories();
 
     document.getElementById('edit-mode-toggle').onclick = (e) => {
         const isEdit = listContainer.classList.toggle('edit-on');
@@ -265,24 +307,44 @@ function initSettingsPage() {
     };
 
     if (typeof Sortable !== 'undefined' && !listContainer.dataset.sortableInit) {
-        new Sortable(listContainer, { animation: 150, ghostClass: 'sortable-ghost', onEnd: saveCategoryOrder });
+        new Sortable(listContainer, { 
+            animation: 150, 
+            ghostClass: 'sortable-ghost', 
+            onEnd: async () => {
+                const newCategories = Array.from(document.querySelectorAll('#category-list li')).map(li => ({
+                    name: li.dataset.name,
+                    type: li.dataset.type
+                }));
+                await saveCategories(newCategories);
+            } 
+        });
         listContainer.dataset.sortableInit = "true";
     }
 
-    document.getElementById('add-category-button').onclick = () => {
+    const addBtn = document.getElementById('add-category-button');
+    addBtn.onclick = async () => {
         const name = document.getElementById('new-category-name').value.trim();
         if (!name) return;
-        const categories = getCategories();
+
+        addBtn.disabled = true;
+        addBtn.textContent = "追加中...";
+        
+        const categories = await getCategories();
         categories.push({ name, type: document.getElementById('new-category-type').value });
-        localStorage.setItem(STORAGE_KEY_CATEGORIES, JSON.stringify(categories));
+        await saveCategories(categories);
+        
         document.getElementById('new-category-name').value = "";
-        displayCategories();
+        await displayCategories();
+        
+        addBtn.disabled = false;
+        addBtn.textContent = "カテゴリを追加する";
     };
 }
 
-function displayCategories() {
+async function displayCategories() {
     const listContainer = document.getElementById('category-list');
-    listContainer.innerHTML = getCategories().map((cat, i) => `
+    const categories = await getCategories();
+    listContainer.innerHTML = categories.map((cat, i) => `
         <li data-name="${cat.name}" data-type="${cat.type}">
             <span><i class="drag-handle">☰</i> <strong>${cat.name}</strong> (${cat.type})</span>
             <button class="delete-btn" onclick="deleteCategory(${i})">削除</button>
@@ -290,18 +352,10 @@ function displayCategories() {
     `).join("");
 }
 
-function saveCategoryOrder() {
-    const newCategories = Array.from(document.querySelectorAll('#category-list li')).map(li => ({
-        name: li.dataset.name,
-        type: li.dataset.type
-    }));
-    localStorage.setItem(STORAGE_KEY_CATEGORIES, JSON.stringify(newCategories));
-}
-
-window.deleteCategory = (index) => {
+window.deleteCategory = async (index) => {
     if (!confirm("削除しますか？")) return;
-    const categories = getCategories();
+    const categories = await getCategories();
     categories.splice(index, 1);
-    localStorage.setItem(STORAGE_KEY_CATEGORIES, JSON.stringify(categories));
-    displayCategories();
+    await saveCategories(categories);
+    await displayCategories();
 };
