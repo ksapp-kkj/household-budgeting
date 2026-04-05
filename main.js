@@ -1,7 +1,8 @@
-// main.js - Firebase クラウドデータベース対応版
+// main.js - 認証＆クラウドデータベース対応・インラインスタイル完全排除版
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
-import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, updateDoc, setDoc, getDoc, query, orderBy } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
+import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, updateDoc, setDoc, getDoc, query, orderBy, where, arrayUnion } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-auth.js";
 
 // ご自身のFirebaseプロジェクト設定情報
 const firebaseConfig = {
@@ -16,45 +17,178 @@ const firebaseConfig = {
 // Firebaseの初期化
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const auth = getAuth(app);
 
 let charts = {};
+let currentUser = null;
+let currentHouseholdId = null;
+
+// ==========================================
+// 認証・画面制御ロジック
+// ==========================================
+
+function showAppScreen(screenId) {
+    document.querySelectorAll('.app-screen').forEach(sec => sec.classList.remove('active'));
+    document.getElementById(screenId).classList.add('active');
+}
+
+window.showRegisterForm = () => {
+    document.getElementById('login-form-container').classList.add('hidden');
+    document.getElementById('register-form-container').classList.remove('hidden');
+};
+
+window.showLoginForm = () => {
+    document.getElementById('register-form-container').classList.add('hidden');
+    document.getElementById('login-form-container').classList.remove('hidden');
+};
+
+// ログイン状態の監視
+onAuthStateChanged(auth, (user) => {
+    if (user) {
+        currentUser = user;
+        showAppScreen('mypage-screen');
+        loadUserHouseholds(); // ログイン時に家計簿一覧を読み込む
+    } else {
+        currentUser = null;
+        showAppScreen('login-screen');
+    }
+});
+
+// マイページ：家計簿一覧の読み込み
+async function loadUserHouseholds() {
+    const listEl = document.getElementById('user-team-list');
+    listEl.innerHTML = '<p class="empty-message">読み込み中...</p>';
+    try {
+        const q = query(collection(db, "households"), where("members", "array-contains", currentUser.uid));
+        const snapshot = await getDocs(q);
+        
+        if (snapshot.empty) {
+            listEl.innerHTML = '<p class="empty-message">管理中の家計簿がありません。<br>新しく作成するか、招待IDを入力してください。</p>';
+            return;
+        }
+        
+        let html = '';
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            html += `
+                <div class="team-item-wrapper">
+                    <button class="team-select-btn" onclick="selectHousehold('${doc.id}', '${data.name}')">${data.name} にアクセス</button>
+                </div>
+            `;
+        });
+        listEl.innerHTML = html;
+    } catch(e) {
+        listEl.innerHTML = '<p class="empty-message" style="color:red;">読み込みエラーが発生しました。</p>';
+        console.error(e);
+    }
+}
+
+// マイページ：新しい家計簿の作成
+window.showCreateHouseholdModal = async () => {
+    const name = prompt("新しい家計簿の名前を入力してください\n（例：山田家の家計簿）");
+    if (!name) return;
+    
+    try {
+        await addDoc(collection(db, "households"), {
+            name: name,
+            owner: currentUser.uid,
+            members: [currentUser.uid],
+            createdAt: Date.now()
+        });
+        alert("家計簿を作成しました！");
+        loadUserHouseholds();
+    } catch (e) { alert("作成エラー: " + e.message); }
+};
+
+// マイページ：招待IDで家計簿に参加
+window.joinHousehold = async () => {
+    const input = document.getElementById('join-team-id');
+    const householdId = input.value.trim();
+    if (!householdId) return alert("招待IDを入力してください");
+    
+    try {
+        const docRef = doc(db, "households", householdId);
+        const docSnap = await getDoc(docRef);
+        if (!docSnap.exists()) return alert("入力されたIDの家計簿が見つかりません。");
+        
+        await updateDoc(docRef, {
+            members: arrayUnion(currentUser.uid)
+        });
+        alert("家計簿に参加しました！");
+        input.value = "";
+        loadUserHouseholds();
+    } catch (e) { alert("参加エラー: " + e.message); }
+};
+
+window.loginAccount = async () => {
+    const email = document.getElementById('login-email-input').value;
+    const password = document.getElementById('login-password-input').value;
+    if (!email || !password) return alert("入力してください");
+    try { await signInWithEmailAndPassword(auth, email, password); } 
+    catch (e) { alert("ログイン失敗: " + e.message); }
+};
+
+window.registerAccount = async () => {
+    const email = document.getElementById('register-email-input').value;
+    const password = document.getElementById('register-password-input').value;
+    if (!email || !password) return alert("入力してください");
+    try { await createUserWithEmailAndPassword(auth, email, password); } 
+    catch (e) { alert("登録失敗: " + e.message); }
+};
+
+window.logout = () => {
+    if (confirm("ログアウトしますか？")) signOut(auth);
+};
+
+window.selectHousehold = (id, name) => {
+    currentHouseholdId = id;
+    
+    document.getElementById('current-team-display').innerText = name;
+    
+    document.getElementById('settings-household-id-display').innerHTML = `ID: ${id}<br><span class="copy-text copy-text-small">(タップでコピー)</span>`;
+    document.getElementById('edit-household-name').value = name;
+
+    showAppScreen('main-app-screen');
+    window.showPage('record'); 
+};
+
+window.backToMyPage = () => {
+    currentHouseholdId = null;
+    showAppScreen('mypage-screen');
+};
 
 // ==========================================
 // Firebase データ通信ヘルパー
 // ==========================================
 
-// 支出記録の取得
 async function getRecords() {
-    // 作成日時の新しい順に並べて取得
-    const q = query(collection(db, "records"), orderBy("createdAt", "desc"));
+    if (!currentHouseholdId) return [];
+    const q = query(collection(db, "households", currentHouseholdId, "records"), orderBy("createdAt", "desc"));
     const snapshot = await getDocs(q);
-    // データを扱いやすい配列に変換（各データに固有のIDを持たせる）
     return snapshot.docs.map(doc => ({ docId: doc.id, ...doc.data() }));
 }
 
-// カテゴリ一覧の取得
 async function getCategories() {
-    const docRef = doc(db, "settings", "categories");
+    if (!currentHouseholdId) return [];
+    const docRef = doc(db, "households", currentHouseholdId, "settings", "categories");
     const docSnap = await getDoc(docRef);
     return docSnap.exists() ? docSnap.data().list : [];
 }
 
-// カテゴリ一覧の保存
 async function saveCategories(categories) {
-    await setDoc(doc(db, "settings", "categories"), { list: categories });
+    if (!currentHouseholdId) return;
+    await setDoc(doc(db, "households", currentHouseholdId, "settings", "categories"), { list: categories });
 }
 
 // ==========================================
-// 画面切り替え制御
+// 家計簿の画面切り替え制御
 // ==========================================
 
-// HTMLから直接呼ばれる関数は window オブジェクトに登録する必要があります
 window.showPage = async (pageId) => {
     document.querySelectorAll('.page-content').forEach(section => section.classList.remove('active'));
     const activeSection = document.getElementById('page-' + pageId);
     if (activeSection) activeSection.classList.add('active');
 
-    // ページが開かれるたびにクラウドから最新データを取得
     if (pageId === 'record') {
         await updateCategorySelect();
         await showHistory();
@@ -74,11 +208,9 @@ async function refreshUI() {
     }
 }
 
-// アプリ起動時の処理
 window.addEventListener('DOMContentLoaded', async () => {
     initRecordPage();
     initModalEvents();
-    await window.showPage('record');
 });
 
 // ==========================================
@@ -100,7 +232,11 @@ async function updateCategorySelect() {
     categorySelect.onchange = () => {
         const type = categorySelect.selectedOptions[0]?.dataset.type || '--';
         typeDisplay.textContent = type;
-        typeDisplay.style.color = type === '固定費' ? '#e74c3c' : (type === '変動費' ? '#2980b9' : '#333');
+        
+        typeDisplay.className = ''; 
+        if (type === '固定費') typeDisplay.classList.add('text-fixed');
+        else if (type === '変動費') typeDisplay.classList.add('text-variable');
+        else typeDisplay.classList.add('text-default');
     };
 }
 
@@ -116,19 +252,17 @@ function initRecordPage() {
 
         if (!category || isNaN(amount)) return alert("正しく入力してください");
 
-        // 通信中はボタンを「保存中」にする
         const submitBtn = document.getElementById('save-button');
         submitBtn.disabled = true;
         submitBtn.textContent = "保存中...";
 
-        // Firebaseへの保存
-        await addDoc(collection(db, "records"), {
+        await addDoc(collection(db, "households", currentHouseholdId, "records"), {
             date: dateInput.value,
             amount: amount,
             category: category,
             type: type,
             memo: document.getElementById('memo').value,
-            createdAt: Date.now() // 並べ替え用
+            createdAt: Date.now()
         });
 
         await refreshUI();
@@ -152,9 +286,9 @@ async function showHistory() {
         <tr>
             <td>${r.date.substring(5)}</td>
             <td><strong>${r.category}</strong></td>
-            <td class="text-right" style="font-weight:bold;">${r.amount.toLocaleString()}円</td>
-            <td style="text-align: center;">
-                <button onclick="openModal('${r.docId}')" style="background-color: #3498db; width: auto; padding: 4px 12px; margin: 0; font-size: 0.8rem;">編集</button>
+            <td class="text-right"><strong>${r.amount.toLocaleString()}円</strong></td>
+            <td class="text-center">
+                <button onclick="openModal('${r.docId}')" class="btn-table-action btn-table-edit">編集</button>
             </td>
         </tr>
     `).join("");
@@ -192,9 +326,9 @@ async function renderSummary(targetMonth) {
             <tr>
                 <td>${r.date.split('-')[2]}日</td>
                 <td>${r.category}</td>
-                <td class="text-right" style="font-weight: bold;">${r.amount.toLocaleString()}円</td>
-                <td style="text-align: center;">
-                    <button onclick="openModal('${r.docId}')" style="background-color: #95a5a6; width: auto; padding: 4px 12px; margin: 0; font-size: 0.8rem;">詳細</button>
+                <td class="text-right"><strong>${r.amount.toLocaleString()}円</strong></td>
+                <td class="text-center">
+                    <button onclick="openModal('${r.docId}')" class="btn-table-action btn-table-detail">詳細</button>
                 </td>
             </tr>
         `;
@@ -249,11 +383,11 @@ window.openModal = async (docId) => {
     editCatSelect.innerHTML = categories.map(c => `<option value="${c.name}">${c.name}</option>`).join("");
     editCatSelect.value = record.category;
 
-    document.getElementById('edit-modal').style.display = 'flex';
+    document.getElementById('edit-modal').classList.add('active');
 };
 
 function closeModal() {
-    document.getElementById('edit-modal').style.display = 'none';
+    document.getElementById('edit-modal').classList.remove('active');
 }
 
 function initModalEvents() {
@@ -264,8 +398,7 @@ function initModalEvents() {
         const categories = await getCategories();
         const catInfo = categories.find(c => c.name === category);
 
-        // Firebaseのデータを更新
-        await updateDoc(doc(db, "records", docId), {
+        await updateDoc(doc(db, "households", currentHouseholdId, "records", docId), {
             date: document.getElementById('edit-date').value,
             amount: parseInt(document.getElementById('edit-amount').value),
             category: category,
@@ -281,8 +414,7 @@ function initModalEvents() {
         const docId = document.getElementById('edit-id').value;
         if (!confirm("本当に削除しますか？")) return;
         
-        // Firebaseから削除
-        await deleteDoc(doc(db, "records", docId));
+        await deleteDoc(doc(db, "households", currentHouseholdId, "records", docId));
         
         await refreshUI();
         closeModal();
@@ -358,4 +490,76 @@ window.deleteCategory = async (index) => {
     categories.splice(index, 1);
     await saveCategories(categories);
     await displayCategories();
+};
+
+// ==========================================
+// その他の追加機能（名前変更・IDコピー・ヘルプ）
+// ==========================================
+
+window.updateHouseholdName = async () => {
+    const newName = document.getElementById('edit-household-name').value.trim();
+    if (!newName) return alert("名前を入力してください");
+    try {
+        await updateDoc(doc(db, "households", currentHouseholdId), { name: newName });
+        document.getElementById('current-team-display').innerText = newName;
+        alert("家計簿の名前を変更しました！");
+    } catch(e) { alert("名前の変更に失敗しました: " + e.message); }
+};
+
+window.copyHouseholdId = () => {
+    if (!currentHouseholdId) return;
+    navigator.clipboard.writeText(currentHouseholdId).then(() => {
+        alert("招待ID「" + currentHouseholdId + "」をコピーしました！\nパートナーに共有してください。");
+    }).catch(err => { 
+        alert("コピーに失敗しました。このIDを手動でコピーしてください: " + currentHouseholdId); 
+    });
+};
+
+window.showHelpModal = (pageId) => {
+    const helpData = {
+        record: {
+            title: "支出記録の使い方",
+            content: `
+                <p>日々の支出を記録する画面です。</p>
+                <ul class="ul-padded">
+                    <li>日付、金額、カテゴリを入力して「記録する」を押してください。</li>
+                    <li>「費目タイプ」は設定画面でカテゴリに紐づけたものが自動で表示されます。</li>
+                    <li>最近の記録は下の表に表示され、「編集」ボタンから修正・削除が可能です。</li>
+                </ul>
+            `
+        },
+        summary: {
+            title: "月別集計の使い方",
+            content: `
+                <p>月ごとの支出状況を確認する画面です。</p>
+                <ul class="ul-padded">
+                    <li>上部の「表示月」を変更すると、その月のデータに切り替わります。</li>
+                    <li>固定費と変動費の合計や、カテゴリごとの割合がグラフで確認できます。</li>
+                    <li>「今月の明細」から、該当月のすべての記録を確認・「詳細」ボタンから編集できます。</li>
+                </ul>
+            `
+        },
+        settings: {
+            title: "設定・マスター管理の使い方",
+            content: `
+                <p>家計簿の基本設定を行う画面です。</p>
+                <ul class="ul-padded">
+                    <li><strong>家計簿の名前:</strong> アプリ上部に表示される名前をいつでも変更できます。</li>
+                    <li><strong>カテゴリ管理:</strong> 支出記録で使うカテゴリを追加・削除したり、並べ替えたりできます。</li>
+                    <li><strong>家族を招待:</strong> 一番下にある招待IDをコピーしてパートナーに送ることで、同じ家計簿を共有できます。</li>
+                </ul>
+            `
+        }
+    };
+    
+    const data = helpData[pageId];
+    if (!data) return;
+    
+    document.getElementById('help-modal-title').innerText = data.title;
+    document.getElementById('help-modal-body').innerHTML = data.content;
+    document.getElementById('help-modal').classList.add('active');
+};
+
+window.closeHelpModal = () => {
+    document.getElementById('help-modal').classList.remove('active');
 };
