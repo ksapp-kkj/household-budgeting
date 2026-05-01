@@ -1,10 +1,33 @@
 // ==========================================
-// 1. 画面切り替え（ナビゲーション）の処理
+// 1. Firebaseの初期化と設定
+// ==========================================
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-app.js";
+import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, writeBatch } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-firestore.js";
+
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyAyBFPe2br0E_Nubc1ZYMGoTMh09vEKVCw",
+  authDomain: "family-portal-79822.firebaseapp.com",
+  projectId: "family-portal-79822",
+  storageBucket: "family-portal-79822.firebasestorage.app",
+  messagingSenderId: "825094653178",
+  appId: "1:825094653178:web:9e5f8ca95889a4fb44b543",
+  measurementId: "G-P1YFGDPT8C"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+// クラウドから取得したデータを保持する変数
+let globalCategories = [];
+let globalRecords = [];
+
+// ==========================================
+// 2. 画面切り替え（ナビゲーション）の処理
 // ==========================================
 const navRecord = document.getElementById('nav-record');
 const navSummary = document.getElementById('nav-summary');
 const navSettings = document.getElementById('nav-settings');
-
 const viewRecord = document.getElementById('view-record');
 const viewSummary = document.getElementById('view-summary');
 const viewSettings = document.getElementById('view-settings');
@@ -21,9 +44,7 @@ function switchView(showView, activeBtn) {
   showView.classList.remove('hidden');
   activeBtn.classList.add('active');
 
-  if (showView === viewSummary) {
-    displaySummary();
-  }
+  if (showView === viewSummary) displaySummary();
 }
 
 navRecord.addEventListener('click', () => switchView(viewRecord, navRecord));
@@ -32,55 +53,73 @@ navSettings.addEventListener('click', () => switchView(viewSettings, navSettings
 
 
 // ==========================================
-// 2. カテゴリの管理処理
+// 3. カテゴリの管理処理 (Firebase連携)
 // ==========================================
 const categoryForm = document.getElementById('category-form');
 const recordTypeSelect = document.getElementById('record-type');
 const categorySelect = document.getElementById('category');
 const categorySubmitBtn = document.getElementById('category-submit-btn');
 
-let currentCategoryEditIndex = -1;
+let currentCategoryEditId = null; // 編集中のFirebaseドキュメントIDを保持
 
-const defaultCategories = [
-  { name: '食費', type: '変動費' },
-  { name: '日用品', type: '変動費' },
-  { name: '家賃', type: '固定費' },
-  { name: '交通費', type: '変動費' },
-  { name: 'その他', type: '変動費' }
-];
-
-function getCategories() {
-  let categories = JSON.parse(localStorage.getItem('kakeiboCategories')) || defaultCategories;
-  if (categories.length > 0 && typeof categories[0] === 'string') {
-    categories = categories.map(catName => ({ name: catName, type: '変動費' }));
-    localStorage.setItem('kakeiboCategories', JSON.stringify(categories));
-  }
-  return categories;
+// 初期カテゴリをFirebaseに登録する関数（初回のみ実行されます）
+async function initializeDefaultCategories() {
+  const defaultCats = [
+    { name: '食費', type: '変動費', order: 0 },
+    { name: '日用品', type: '変動費', order: 1 },
+    { name: '家賃', type: '固定費', order: 2 },
+    { name: '交通費', type: '変動費', order: 3 },
+    { name: 'その他', type: '変動費', order: 4 }
+  ];
+  const batch = writeBatch(db);
+  defaultCats.forEach(cat => {
+    const newDocRef = doc(collection(db, 'kakeibo_v2_categories'));
+    batch.set(newDocRef, cat);
+  });
+  await batch.commit();
 }
 
-function updateCategoriesOrder() {
-  const newCategories = [];
+// リアルタイム同期（カテゴリ）
+onSnapshot(collection(db, 'kakeibo_v2_categories'), (snapshot) => {
+  globalCategories = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  
+  // 初回アクセス時でデータがない場合はデフォルトを生成
+  if (globalCategories.length === 0) {
+    initializeDefaultCategories();
+    return;
+  }
+  
+  // 並び順(order)でソート
+  globalCategories.sort((a, b) => (a.order || 0) - (b.order || 0));
+  
+  displayCategories();
+  updateCategorySelect();
+});
+
+// ドラッグ＆ドロップで順番が変わった時にFirebaseに一斉保存
+async function updateCategoriesOrder() {
+  const batch = writeBatch(db);
+  let orderIndex = 0;
+  
   const listVariable = document.getElementById('category-list-variable');
   const listFixed = document.getElementById('category-list-fixed');
 
   Array.from(listVariable.children).forEach(li => {
-    if (li.dataset.name) newCategories.push({ name: li.dataset.name, type: '変動費' });
-  });
-  Array.from(listFixed.children).forEach(li => {
-    if (li.dataset.name) newCategories.push({ name: li.dataset.name, type: '固定費' });
+    if (li.dataset.id) batch.update(doc(db, 'kakeibo_v2_categories', li.dataset.id), { order: orderIndex++ });
   });
 
-  localStorage.setItem('kakeiboCategories', JSON.stringify(newCategories));
-  updateCategorySelect(); 
+  Array.from(listFixed.children).forEach(li => {
+    if (li.dataset.id) batch.update(doc(db, 'kakeibo_v2_categories', li.dataset.id), { order: orderIndex++ });
+  });
+
+  await batch.commit();
 }
 
 function updateCategorySelect() {
-  const categories = getCategories();
   const currentType = recordTypeSelect.value;
-  
   categorySelect.innerHTML = '';
-  const filteredCategories = categories.filter(cat => cat.type === currentType);
   
+  const filteredCategories = globalCategories.filter(cat => cat.type === currentType);
   filteredCategories.forEach(cat => {
     const option = document.createElement('option');
     option.value = cat.name;
@@ -103,16 +142,15 @@ function setCategoryEditMode(isEdit) {
 }
 
 function displayCategories() {
-  const categories = getCategories();
   const listVariable = document.getElementById('category-list-variable');
   const listFixed = document.getElementById('category-list-fixed');
   
   listVariable.innerHTML = '';
   listFixed.innerHTML = '';
 
-  categories.forEach((cat) => {
+  globalCategories.forEach((cat) => {
     const li = document.createElement('li');
-    li.dataset.name = cat.name; 
+    li.dataset.id = cat.id; 
     li.className = 'category-card'; 
 
     const leftDiv = document.createElement('div');
@@ -139,9 +177,7 @@ function displayCategories() {
       document.getElementById('new-category').value = cat.name;
       document.getElementById('new-category-type').value = cat.type;
       
-      const currentCats = getCategories();
-      currentCategoryEditIndex = currentCats.findIndex(c => c.name === cat.name);
-      
+      currentCategoryEditId = cat.id;
       categorySubmitBtn.textContent = '更新';
       setCategoryEditMode(true); 
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -150,19 +186,16 @@ function displayCategories() {
     const deleteBtn = document.createElement('button');
     deleteBtn.textContent = '削除';
     deleteBtn.className = 'delete-btn';
-    deleteBtn.onclick = () => {
+    deleteBtn.onclick = async () => {
       if (confirm(`カテゴリ「${cat.name}」を削除しますか？\n※過去の記録はそのまま残りますが、集計などでカテゴリなし扱いになる場合があります。`)) {
-        let currentCats = getCategories();
-        currentCats = currentCats.filter(c => c.name !== cat.name);
-        localStorage.setItem('kakeiboCategories', JSON.stringify(currentCats));
+        await deleteDoc(doc(db, 'kakeibo_v2_categories', cat.id));
         
-        if (currentCategoryEditIndex > -1 && document.getElementById('new-category').value === cat.name) {
-          currentCategoryEditIndex = -1;
+        if (currentCategoryEditId === cat.id) {
+          currentCategoryEditId = null;
           categorySubmitBtn.textContent = '追加';
           document.getElementById('new-category').value = '';
           setCategoryEditMode(false);
         }
-        displayCategories();
       }
     };
 
@@ -174,49 +207,45 @@ function displayCategories() {
     if (cat.type === '固定費') listFixed.appendChild(li);
     else listVariable.appendChild(li);
   });
-
-  updateCategorySelect();
 }
 
-categoryForm.addEventListener('submit', function(e) {
+categoryForm.addEventListener('submit', async function(e) {
   e.preventDefault();
   const newCategoryInput = document.getElementById('new-category');
   const newCategoryType = document.getElementById('new-category-type').value;
   const newCategoryName = newCategoryInput.value.trim();
 
   if (newCategoryName !== '') {
-    const categories = getCategories();
-    
-    if (currentCategoryEditIndex > -1) {
-      const oldCategoryName = categories[currentCategoryEditIndex].name;
-      categories[currentCategoryEditIndex] = { name: newCategoryName, type: newCategoryType };
+    if (currentCategoryEditId) {
+      // 編集時の処理（カテゴリ名が変わったら、過去の記録も一斉に更新する）
+      const oldCategoryName = globalCategories.find(c => c.id === currentCategoryEditId).name;
+      const batch = writeBatch(db);
       
-      let records = JSON.parse(localStorage.getItem('kakeiboRecords')) || [];
-      records.forEach(record => {
+      batch.update(doc(db, 'kakeibo_v2_categories', currentCategoryEditId), { name: newCategoryName, type: newCategoryType });
+      
+      globalRecords.forEach(record => {
         if (record.category === oldCategoryName) {
-          record.category = newCategoryName;
-          record.type = newCategoryType;
+          batch.update(doc(db, 'kakeibo_v2_records', record.id), { category: newCategoryName, type: newCategoryType });
         }
       });
-      localStorage.setItem('kakeiboRecords', JSON.stringify(records));
+      await batch.commit();
       
-      currentCategoryEditIndex = -1;
+      currentCategoryEditId = null;
       categorySubmitBtn.textContent = '追加';
       setCategoryEditMode(false); 
     } else {
-      categories.push({ name: newCategoryName, type: newCategoryType });
+      // 新規追加時の処理
+      const newOrder = globalCategories.length;
+      await addDoc(collection(db, 'kakeibo_v2_categories'), { name: newCategoryName, type: newCategoryType, order: newOrder });
     }
 
-    localStorage.setItem('kakeiboCategories', JSON.stringify(categories));
     newCategoryInput.value = '';
-    displayCategories();
-    displayRecords(); 
   }
 });
 
 
 // ==========================================
-// 3. 支出の記録・表示・編集・削除処理
+// 4. 支出の記録・表示・編集・削除処理 (Firebase連携)
 // ==========================================
 const form = document.getElementById('kakeibo-form');
 const recordList = document.getElementById('record-list');
@@ -225,7 +254,14 @@ const recordMonthInput = document.getElementById('record-month');
 
 recordMonthInput.addEventListener('change', displayRecords);
 
-let currentEditIndex = -1;
+let currentEditId = null; // 編集中のFirebaseドキュメントID
+
+// リアルタイム同期（支出記録）
+onSnapshot(collection(db, 'kakeibo_v2_records'), (snapshot) => {
+  globalRecords = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  displayRecords();
+  displaySummary();
+});
 
 function setExpenseEditMode(isEdit) {
   const inputs = ['date', 'record-type', 'category', 'amount', 'memo'];
@@ -238,7 +274,7 @@ function setExpenseEditMode(isEdit) {
   else submitBtn.classList.remove('edit-mode-btn');
 }
 
-form.addEventListener('submit', function(e) {
+form.addEventListener('submit', async function(e) {
   e.preventDefault();
 
   const date = document.getElementById('date').value;
@@ -247,34 +283,30 @@ form.addEventListener('submit', function(e) {
   const amount = parseInt(document.getElementById('amount').value, 10);
   const memo = document.getElementById('memo').value.trim();
 
-  const record = { date, category: categoryName, type: categoryType, amount, memo };
-  let records = JSON.parse(localStorage.getItem('kakeiboRecords')) || [];
+  const recordData = { date, category: categoryName, type: categoryType, amount, memo };
 
-  if (currentEditIndex > -1) {
-    records[currentEditIndex] = record;
-    currentEditIndex = -1;
+  if (currentEditId) {
+    await updateDoc(doc(db, 'kakeibo_v2_records', currentEditId), recordData);
+    currentEditId = null;
     submitBtn.textContent = '記録を保存';
     setExpenseEditMode(false); 
   } else {
-    records.push(record);
+    await addDoc(collection(db, 'kakeibo_v2_records'), recordData);
   }
 
-  localStorage.setItem('kakeiboRecords', JSON.stringify(records));
   document.getElementById('amount').value = '';
   document.getElementById('memo').value = '';
-  
-  displayRecords();
-  displaySummary(); 
 });
 
 function displayRecords() {
   recordList.innerHTML = '';
-  let allRecords = JSON.parse(localStorage.getItem('kakeiboRecords')) || [];
-  let displayData = allRecords.map((record, index) => ({ ...record, originalIndex: index }));
+  
+  let displayData = [...globalRecords];
 
   const selectedMonth = recordMonthInput.value;
   if (selectedMonth) displayData = displayData.filter(record => record.date.startsWith(selectedMonth));
 
+  // 日付順にソート（降順）
   displayData.sort((a, b) => new Date(b.date) - new Date(a.date));
 
   displayData.forEach(item => {
@@ -316,7 +348,7 @@ function displayRecords() {
       document.getElementById('amount').value = item.amount;
       document.getElementById('memo').value = item.memo || '';
       
-      currentEditIndex = item.originalIndex;
+      currentEditId = item.id;
       submitBtn.textContent = '記録を更新';
       setExpenseEditMode(true); 
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -325,21 +357,17 @@ function displayRecords() {
     const deleteBtn = document.createElement('button');
     deleteBtn.textContent = '削除';
     deleteBtn.className = 'delete-btn';
-    deleteBtn.onclick = () => {
+    deleteBtn.onclick = async () => {
       if (confirm('この記録を削除しますか？')) {
-        let currentAllRecords = JSON.parse(localStorage.getItem('kakeiboRecords')) || [];
-        currentAllRecords.splice(item.originalIndex, 1);
-        localStorage.setItem('kakeiboRecords', JSON.stringify(currentAllRecords));
+        await deleteDoc(doc(db, 'kakeibo_v2_records', item.id));
         
-        if (currentEditIndex === item.originalIndex) {
-          currentEditIndex = -1;
+        if (currentEditId === item.id) {
+          currentEditId = null;
           submitBtn.textContent = '記録を保存';
           document.getElementById('amount').value = '';
           document.getElementById('memo').value = '';
           setExpenseEditMode(false);
         }
-        displayRecords();
-        displaySummary();
       }
     };
 
@@ -355,7 +383,7 @@ function displayRecords() {
 
 
 // ==========================================
-// 4. 集計とグラフ描画処理
+// 5. 集計とグラフ描画処理
 // ==========================================
 let summaryChart = null;
 const summaryMonthInput = document.getElementById('summary-month');
@@ -365,14 +393,13 @@ summaryMonthInput.addEventListener('change', displaySummary);
 chartTypeSelect.addEventListener('change', displaySummary);
 
 function displaySummary() {
-  let records = JSON.parse(localStorage.getItem('kakeiboRecords')) || [];
   const selectedMonth = summaryMonthInput.value;
   const chartType = chartTypeSelect.value;
 
   let total = 0, fixedTotal = 0, variableTotal = 0;
   let allCategoryTotals = {}, fixedCategoryTotals = {}, variableCategoryTotals = {};
 
-  const filteredRecords = records.filter(record => record.date.startsWith(selectedMonth));
+  const filteredRecords = globalRecords.filter(record => record.date.startsWith(selectedMonth));
 
   filteredRecords.forEach(record => {
     total += record.amount;
@@ -433,11 +460,9 @@ function drawChart(labels, data) {
 
 
 // ==========================================
-// 5. 画面読み込み時の初期化処理
+// 6. 画面読み込み時の初期化処理
 // ==========================================
 document.addEventListener('DOMContentLoaded', () => {
-  displayCategories();
-  
   const today = new Date();
   const year = today.getFullYear();
   const month = String(today.getMonth() + 1).padStart(2, '0');
@@ -450,9 +475,9 @@ document.addEventListener('DOMContentLoaded', () => {
   summaryMonthInput.value = currentMonthStr;
   recordMonthInput.value = currentMonthStr; 
   
-  displayRecords(); 
-  displaySummary(); 
-
+  // 画面の初期表示はonSnapshotのイベントが発火した際に自動的に行われます。
+  
+  // ドラッグ＆ドロップの設定
   new Sortable(document.getElementById('category-list-variable'), { animation: 150, handle: '.drag-handle', onEnd: updateCategoriesOrder });
   new Sortable(document.getElementById('category-list-fixed'), { animation: 150, handle: '.drag-handle', onEnd: updateCategoriesOrder });
 });
