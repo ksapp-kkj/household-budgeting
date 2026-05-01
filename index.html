@@ -1,298 +1,127 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>家族の共有家計簿</title>
-    
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
-
-    <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>シンプル家計簿</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
 </head>
 <body>
+  <div class="app-container">
+    
+    <header>
+      <h2>家計簿システム</h2>
+      <nav>
+        <button id="nav-record" class="active">支出記録</button>
+        <button id="nav-summary">集計</button>
+        <button id="nav-settings">設定・管理</button>
+      </nav>
+    </header>
 
-    <div id="login-screen" class="app-screen active">
-        <div class="login-wrapper">
-            <h2>💰 家族の共有家計簿</h2>
-            <p class="help-text mb-15">〜ムダをなくして楽しく家計管理〜</p>
-            
-            <div id="login-form-container" class="card mt-20">
-                <h3 class="mb-15 color-main">ログイン</h3>
-                <div class="form-group">
-                    <input type="email" id="login-email-input" class="w-100 mb-10 input-box" placeholder="メールアドレス">
-                </div>
-                <div class="form-group">
-                    <input type="password" id="login-password-input" class="w-100 mb-15 input-box" placeholder="パスワード">
-                </div>
-                <button class="btn-add w-100 p-10 mb-15" onclick="loginAccount()">ログイン</button>
-                <hr class="modal-hr">
-                <p class="help-text mb-10">はじめての方はこちら</p>
-                <button class="btn-small-action btn-small-orange w-100 p-10" onclick="showRegisterForm()">新規アカウント登録</button>
-            </div>
+    <!-- 1. 支出記録 画面 -->
+    <section id="view-record" class="record-layout">
+      <div class="form-area">
+        <form id="kakeibo-form">
+          <div class="input-group">
+            <label>日付</label>
+            <input type="date" id="date" required>
+          </div>
+          
+          <div class="input-group">
+            <label>分類</label>
+            <select id="record-type" required>
+              <option value="変動費">変動費</option>
+              <option value="固定費">固定費</option>
+            </select>
+          </div>
 
-            <div id="register-form-container" class="card mt-20 hidden">
-                <h3 class="mb-15 color-orange">新規アカウント登録</h3>
-                <div class="form-group">
-                    <input type="email" id="register-email-input" class="w-100 mb-10 input-box" placeholder="メールアドレス">
-                </div>
-                <div class="form-group">
-                    <input type="password" id="register-password-input" class="w-100 mb-10 input-box" placeholder="パスワード (6文字以上)">
-                </div>
-                <div class="form-group">
-                    <input type="text" id="register-name-input" class="w-100 mb-15 input-box" placeholder="あなたの表示名（ニックネーム）">
-                </div>
-                <button class="btn-small-action btn-small-orange w-100 p-10 mb-15 text-lg" onclick="registerAccount()">登録して始める</button>
-                <hr class="modal-hr">
-                <button class="btn-small-action btn-small-gray w-100 p-10" onclick="showLoginForm()">ログイン画面に戻る</button>
-            </div>
+          <div class="input-group">
+            <label>カテゴリ</label>
+            <select id="category" required></select>
+          </div>
+          <div class="input-group">
+            <label>金額</label>
+            <input type="number" id="amount" placeholder="0" required>
+          </div>
+          <div class="input-group">
+            <label>メモ（任意）</label>
+            <input type="text" id="memo" placeholder="備考など">
+          </div>
+          <button type="submit" id="submit-btn" class="action-btn">記録を保存</button>
+        </form>
+      </div>
+      
+      <div class="list-area">
+        <div class="list-header">
+          <h4>記録一覧</h4>
+          <input type="month" id="record-month">
         </div>
-    </div>
+        <ul id="record-list"></ul>
+      </div>
+    </section>
 
-    <div id="mypage-screen" class="app-screen">
-        <div class="mypage-wrapper">
-            <div class="list-header">
-                <h2>マイページ</h2>
-                <button class="btn-edit-mode" onclick="logout()">ログアウト</button>
-            </div>
-            
-            <h3 class="mt-20 mb-10">管理中の家計簿</h3>
-            <div id="user-team-list" class="card">
-                <p class="empty-message">読み込み中...</p>
-            </div>
+    <!-- 2. 集計 画面 -->
+    <section id="view-summary" class="hidden">
+      <div class="summary-header">
+        <h3>集計</h3>
+        <input type="month" id="summary-month">
+      </div>
+      
+      <div class="summary-box">
+        <p>総合計: <strong id="total-amount">0</strong> 円</p>
+        <p>固定費: <span id="total-fixed" class="text-fixed">0</span> 円</p>
+        <p>変動費: <span id="total-variable" class="text-variable">0</span> 円</p>
+      </div>
 
-            <button class="btn-add w-100 mt-20 p-10" onclick="showCreateHouseholdModal()">＋ 新しい家計簿を作成する</button>
+      <div class="input-group" style="margin-top: 15px;">
+        <select id="chart-type">
+          <option value="all">全ての費用内訳</option>
+          <option value="type">固定費・変動費の割合</option>
+          <option value="fixed">固定費の内訳のみ</option>
+          <option value="variable">変動費の内訳のみ</option>
+        </select>
+      </div>
 
-            <hr class="dashed-hr">
-            <h3 class="mb-10">家族の家計簿に参加する</h3>
-            <p class="help-text mb-10">パートナーから共有された「招待ID」を入力してください。</p>
-            <div class="flex-gap-8">
-                <input type="text" id="join-team-id" class="input-box" placeholder="招待IDを入力">
-                <button class="btn-join" onclick="joinHousehold()">参加</button>
-            </div>
+      <div class="chart-container">
+        <canvas id="category-chart"></canvas>
+      </div>
+
+      <h4>内訳詳細</h4>
+      <ul id="summary-category-list"></ul>
+    </section>
+
+    <!-- 3. 設定・管理 画面 -->
+    <section id="view-settings" class="hidden">
+      <h3>設定・管理</h3>
+      
+      <div class="settings-block">
+        <h4>カテゴリ追加・編集</h4>
+        <form id="category-form">
+          <input type="text" id="new-category" placeholder="名称" required>
+          <select id="new-category-type" required>
+            <option value="変動費">変動費</option>
+            <option value="固定費">固定費</option>
+          </select>
+          <button type="submit" id="category-submit-btn" class="action-btn">追加</button>
+        </form>
+        
+        <div class="category-groups">
+          <details class="category-details" open>
+            <summary class="group-title-variable">変動費</summary>
+            <ul id="category-list-variable"></ul>
+          </details>
+          <details class="category-details" open>
+            <summary class="group-title-fixed">固定費</summary>
+            <ul id="category-list-fixed"></ul>
+          </details>
         </div>
-    </div>
+      </div>
+    </section>
+  </div>
 
-    <div id="main-app-screen" class="app-screen">
-        <header class="app-header">
-            <div id="current-team-display" class="header-team-name">家計簿名未定</div>
-            <button class="btn-back-mypage" onclick="backToMyPage()">マイページへ戻る</button>
-        </header>
-
-        <nav>
-            <a onclick="showPage('record')">支出記録</a>
-            <a onclick="showPage('summary')">月別集計</a>
-            <a onclick="showPage('settings')">設定</a>
-        </nav>
-
-        <main>
-            <section id="page-record" class="page-content active">
-                <div class="page-header-flex">
-                    <h1>支出記録</h1>
-                    <button class="btn-help" onclick="showHelpModal('record')">❓ 使い方</button>
-                </div>
-                <form id="expense-form">
-                    <div class="input-group">
-                        <label for="date">日付</label>
-                        <input type="date" id="date" required>
-                    </div>
-
-                    <div class="input-group">
-                        <label for="amount">金額 (円)</label>
-                        <input type="number" id="amount" placeholder="1000" required>
-                    </div>
-
-                    <div class="input-group">
-                        <label for="category">カテゴリ</label>
-                        <select id="category" required>
-                            <option value="">選択してください</option>
-                        </select>
-                    </div>
-
-                    <div class="input-group">
-                        <label>費目タイプ</label>
-                        <div id="type-display" class="text-default">--</div>
-                    </div>
-
-                    <div class="input-group">
-                        <label for="memo">メモ(任意)</label>
-                        <input type="text" id="memo" placeholder="スーパーで購入">
-                    </div>
-
-                    <button type="submit" id="save-button">記録する</button>
-                </form>
-
-                <section class="recent-records-section">
-                    <h2 class="recent-records-title">最近の記録（直近5件）</h2>
-                    <div class="detail-section">
-                        <table class="report-table">
-                            <thead>
-                                <tr>
-                                    <th>日付</th>
-                                    <th>カテゴリ</th>
-                                    <th class="text-right">金額</th>
-                                    <th class="text-center">操作</th>
-                                </tr>
-                            </thead>
-                            <tbody id="recent-records-list"></tbody>
-                        </table>
-                    </div>
-                </section>
-            </section>
-
-            <section id="page-summary" class="page-content">
-                <div class="page-header-flex">
-                    <h1>月別集計</h1>
-                    <button class="btn-help" onclick="showHelpModal('summary')">❓ 使い方</button>
-                </div>
-                <section class="month-selector">
-                    <div class="input-group">
-                        <label for="view-month">表示月を選択</label>
-                        <input type="month" id="view-month">
-                    </div>
-                </section>
-
-                <section class="summary-grid">
-                    <div class="summary-card total">
-                        <div class="card-content">
-                            <div class="card-label">総合計</div>
-                            <div id="total-amount" class="card-value">0円</div>
-                        </div>
-                        <div class="card-chart">
-                            <canvas id="chart-total"></canvas>
-                        </div>
-                    </div>
-                    <div class="summary-card fixed">
-                        <div class="card-content">
-                            <div class="card-label">固定費 内訳</div>
-                            <div id="fixed-total" class="card-value">0円</div>
-                        </div>
-                        <div class="card-chart">
-                            <canvas id="chart-fixed"></canvas>
-                        </div>
-                    </div>
-                    <div class="summary-card variable">
-                        <div class="card-content">
-                            <div class="card-label">変動費 内訳</div>
-                            <div id="variable-total" class="card-value">0円</div>
-                        </div>
-                        <div class="card-chart">
-                            <canvas id="chart-variable"></canvas>
-                        </div>
-                    </div>
-                </section>
-
-                <section class="detail-section">
-                    <h2>今月の明細</h2>
-                    <table class="report-table">
-                        <thead>
-                            <tr>
-                                <th>日付</th>
-                                <th>カテゴリ</th>
-                                <th class="text-right">金額</th>
-                                <th class="text-center">詳細</th>
-                            </tr>
-                        </thead>
-                        <tbody id="record-list"></tbody>
-                    </table>
-                </section>
-            </section>
-
-            <section id="page-settings" class="page-content">
-                <div class="page-header-flex">
-                    <h1>設定・マスター管理</h1>
-                    <button class="btn-help" onclick="showHelpModal('settings')">❓ 使い方</button>
-                </div>
-
-                <section class="settings-block">
-                    <h2>家計簿の基本設定</h2>
-                    <div class="input-group">
-                        <label for="edit-household-name">家計簿の名前</label>
-                        <div class="flex-gap-8">
-                            <input type="text" id="edit-household-name" class="input-box">
-                            <button class="btn-add btn-change-name" onclick="updateHouseholdName()">変更</button>
-                        </div>
-                    </div>
-                </section>
-
-                <section class="settings-block mt-20">
-                    <h2>カテゴリの追加</h2>
-                    <div class="input-group">
-                        <label for="new-category-name">カテゴリ名</label>
-                        <input type="text" id="new-category-name" placeholder="例：家賃">
-                    </div>
-                    
-                    <div class="input-group">
-                        <label for="new-category-type">費目タイプ</label>
-                        <select id="new-category-type">
-                            <option value="変動費">変動費</option>
-                            <option value="固定費">固定費</option>
-                        </select>
-                    </div>
-                    
-                    <button id="add-category-button">カテゴリを追加する</button>
-                </section>
-
-                <section class="mt-30">
-                    <div class="flex-between">
-                        <h2>登録済みカテゴリ</h2>
-                        <button id="edit-mode-toggle" class="btn-edit-mode">カテゴリを整理する</button>
-                    </div>
-                    <ul id="category-list" class="edit-off"></ul>
-                </section>
-
-                <section class="settings-block invite-section mt-40">
-                    <h2 class="mt-0">家族を招待する</h2>
-                    <p class="help-text mb-10">パートナーに以下のIDを共有して、マイページから参加してもらってください。</p>
-                    <div id="settings-household-id-display" class="header-team-id invite-id-display" onclick="copyHouseholdId()">
-                        ID: --- <br><span class="copy-text copy-text-small">(タップでコピー)</span>
-                    </div>
-                </section>
-            </section>
-        </main>
-    </div>
-
-    <div id="edit-modal" class="modal-overlay">
-        <div class="modal-content">
-            <h2>記録の編集・詳細</h2>
-            <form id="edit-form">
-                <input type="hidden" id="edit-id">
-                <div class="input-group">
-                    <label>日付</label>
-                    <input type="date" id="edit-date" required>
-                </div>
-                <div class="input-group">
-                    <label>金額 (円)</label>
-                    <input type="number" id="edit-amount" required>
-                </div>
-                <div class="input-group">
-                    <label>カテゴリ</label>
-                    <select id="edit-category" required></select>
-                </div>
-                <div class="input-group">
-                    <label>メモ</label>
-                    <input type="text" id="edit-memo">
-                </div>
-                
-                <div class="modal-actions">
-                    <button type="button" id="update-button" class="btn-blue">更新する</button>
-                    <button type="button" id="delete-button" class="btn-red">この記録を削除</button>
-                    <button type="button" id="close-modal-button" class="btn-gray">閉じる</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <div id="help-modal" class="modal-overlay">
-        <div class="modal-content">
-            <h2 id="help-modal-title" class="help-modal-title">使い方</h2>
-            <div id="help-modal-body" class="help-modal-body"></div>
-            <div class="modal-actions mt-20 grid-1">
-                <button type="button" onclick="closeHelpModal()" class="btn-gray w-100">閉じる</button>
-            </div>
-        </div>
-    </div>
-
-    <script type="module" src="main.js"></script>
+  <script src="script.js"></script>
 </body>
 </html>
