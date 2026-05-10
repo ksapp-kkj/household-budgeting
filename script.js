@@ -4,15 +4,15 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-app.js";
 import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, writeBatch } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-firestore.js";
 
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+// ご提供いただいた最新の鍵
 const firebaseConfig = {
   apiKey: "AIzaSyAyBFPe2br0E_Nubc1ZYMGoTMh09vEKVCw",
   authDomain: "family-portal-79822.firebaseapp.com",
   projectId: "family-portal-79822",
   storageBucket: "family-portal-79822.firebasestorage.app",
   messagingSenderId: "825094653178",
-  appId: "1:825094653178:web:9e5f8ca95889a4fb44b543",
-  measurementId: "G-P1YFGDPT8C"
+  appId: "1:825094653178:web:fbbea49cab91cea744b543",
+  measurementId: "G-CXX2Z9VN8V"
 };
 
 const app = initializeApp(firebaseConfig);
@@ -28,6 +28,7 @@ let globalRecords = [];
 const navRecord = document.getElementById('nav-record');
 const navSummary = document.getElementById('nav-summary');
 const navSettings = document.getElementById('nav-settings');
+
 const viewRecord = document.getElementById('view-record');
 const viewSummary = document.getElementById('view-summary');
 const viewSettings = document.getElementById('view-settings');
@@ -44,7 +45,9 @@ function switchView(showView, activeBtn) {
   showView.classList.remove('hidden');
   activeBtn.classList.add('active');
 
-  if (showView === viewSummary) displaySummary();
+  if (showView === viewSummary) {
+    displaySummary();
+  }
 }
 
 navRecord.addEventListener('click', () => switchView(viewRecord, navRecord));
@@ -60,11 +63,11 @@ const recordTypeSelect = document.getElementById('record-type');
 const categorySelect = document.getElementById('category');
 const categorySubmitBtn = document.getElementById('category-submit-btn');
 
-let currentCategoryEditId = null; // 編集中のFirebaseドキュメントIDを保持
+let currentCategoryEditId = null;
 
-// 初期カテゴリをFirebaseに登録する関数（初回のみ実行されます）
+// 初回起動時にデフォルトカテゴリをFirebaseに登録
 async function initializeDefaultCategories() {
-  const defaultCats = [
+  const defaultCategories = [
     { name: '食費', type: '変動費', order: 0 },
     { name: '日用品', type: '変動費', order: 1 },
     { name: '家賃', type: '固定費', order: 2 },
@@ -72,7 +75,7 @@ async function initializeDefaultCategories() {
     { name: 'その他', type: '変動費', order: 4 }
   ];
   const batch = writeBatch(db);
-  defaultCats.forEach(cat => {
+  defaultCategories.forEach(cat => {
     const newDocRef = doc(collection(db, 'kakeibo_v2_categories'));
     batch.set(newDocRef, cat);
   });
@@ -83,20 +86,17 @@ async function initializeDefaultCategories() {
 onSnapshot(collection(db, 'kakeibo_v2_categories'), (snapshot) => {
   globalCategories = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   
-  // 初回アクセス時でデータがない場合はデフォルトを生成
   if (globalCategories.length === 0) {
     initializeDefaultCategories();
     return;
   }
   
-  // 並び順(order)でソート
   globalCategories.sort((a, b) => (a.order || 0) - (b.order || 0));
-  
   displayCategories();
   updateCategorySelect();
 });
 
-// ドラッグ＆ドロップで順番が変わった時にFirebaseに一斉保存
+// ドラッグ＆ドロップ後の並び順保存
 async function updateCategoriesOrder() {
   const batch = writeBatch(db);
   let orderIndex = 0;
@@ -105,11 +105,15 @@ async function updateCategoriesOrder() {
   const listFixed = document.getElementById('category-list-fixed');
 
   Array.from(listVariable.children).forEach(li => {
-    if (li.dataset.id) batch.update(doc(db, 'kakeibo_v2_categories', li.dataset.id), { order: orderIndex++ });
+    if (li.dataset.id) {
+      batch.update(doc(db, 'kakeibo_v2_categories', li.dataset.id), { order: orderIndex++ });
+    }
   });
 
   Array.from(listFixed.children).forEach(li => {
-    if (li.dataset.id) batch.update(doc(db, 'kakeibo_v2_categories', li.dataset.id), { order: orderIndex++ });
+    if (li.dataset.id) {
+      batch.update(doc(db, 'kakeibo_v2_categories', li.dataset.id), { order: orderIndex++ });
+    }
   });
 
   await batch.commit();
@@ -137,6 +141,7 @@ function setCategoryEditMode(isEdit) {
     if (isEdit) el.classList.add('edit-mode-input');
     else el.classList.remove('edit-mode-input');
   });
+  
   if (isEdit) categorySubmitBtn.classList.add('edit-mode-btn');
   else categorySubmitBtn.classList.remove('edit-mode-btn');
 }
@@ -204,8 +209,11 @@ function displayCategories() {
     li.appendChild(leftDiv);
     li.appendChild(actionsDiv);
 
-    if (cat.type === '固定費') listFixed.appendChild(li);
-    else listVariable.appendChild(li);
+    if (cat.type === '固定費') {
+      listFixed.appendChild(li);
+    } else {
+      listVariable.appendChild(li);
+    }
   });
 }
 
@@ -217,7 +225,7 @@ categoryForm.addEventListener('submit', async function(e) {
 
   if (newCategoryName !== '') {
     if (currentCategoryEditId) {
-      // 編集時の処理（カテゴリ名が変わったら、過去の記録も一斉に更新する）
+      // 編集：カテゴリ名が変わったら、過去の記録のカテゴリ名も一括変更
       const oldCategoryName = globalCategories.find(c => c.id === currentCategoryEditId).name;
       const batch = writeBatch(db);
       
@@ -228,17 +236,17 @@ categoryForm.addEventListener('submit', async function(e) {
           batch.update(doc(db, 'kakeibo_v2_records', record.id), { category: newCategoryName, type: newCategoryType });
         }
       });
+      
       await batch.commit();
       
       currentCategoryEditId = null;
       categorySubmitBtn.textContent = '追加';
       setCategoryEditMode(false); 
     } else {
-      // 新規追加時の処理
+      // 新規追加
       const newOrder = globalCategories.length;
       await addDoc(collection(db, 'kakeibo_v2_categories'), { name: newCategoryName, type: newCategoryType, order: newOrder });
     }
-
     newCategoryInput.value = '';
   }
 });
@@ -254,7 +262,7 @@ const recordMonthInput = document.getElementById('record-month');
 
 recordMonthInput.addEventListener('change', displayRecords);
 
-let currentEditId = null; // 編集中のFirebaseドキュメントID
+let currentEditId = null;
 
 // リアルタイム同期（支出記録）
 onSnapshot(collection(db, 'kakeibo_v2_records'), (snapshot) => {
@@ -270,6 +278,7 @@ function setExpenseEditMode(isEdit) {
     if (isEdit) el.classList.add('edit-mode-input');
     else el.classList.remove('edit-mode-input');
   });
+  
   if (isEdit) submitBtn.classList.add('edit-mode-btn');
   else submitBtn.classList.remove('edit-mode-btn');
 }
@@ -300,17 +309,18 @@ form.addEventListener('submit', async function(e) {
 
 function displayRecords() {
   recordList.innerHTML = '';
-  
   let displayData = [...globalRecords];
 
   const selectedMonth = recordMonthInput.value;
-  if (selectedMonth) displayData = displayData.filter(record => record.date.startsWith(selectedMonth));
+  if (selectedMonth) {
+    displayData = displayData.filter(record => record.date.startsWith(selectedMonth));
+  }
 
-  // 日付順にソート（降順）
   displayData.sort((a, b) => new Date(b.date) - new Date(a.date));
 
   displayData.forEach(item => {
     const li = document.createElement('li');
+
     let typeHtml = '';
     if (item.type) {
       const typeClass = item.type === '固定費' ? 'type-fixed' : 'type-variable';
@@ -320,6 +330,7 @@ function displayRecords() {
     const infoDiv = document.createElement('div');
     infoDiv.className = 'record-info';
     infoDiv.innerHTML = `<span>${item.date} ${typeHtml}【${item.category}】</span>`;
+    
     if (item.memo) {
       const memoSpan = document.createElement('span');
       memoSpan.className = 'record-memo';
@@ -375,6 +386,7 @@ function displayRecords() {
     actionsDiv.appendChild(deleteBtn);
     rightDiv.appendChild(amountSpan);
     rightDiv.appendChild(actionsDiv);
+
     li.appendChild(infoDiv);
     li.appendChild(rightDiv);
     recordList.appendChild(li);
@@ -387,23 +399,31 @@ function displayRecords() {
 // ==========================================
 let summaryChart = null;
 const summaryMonthInput = document.getElementById('summary-month');
-const chartTypeSelect = document.getElementById('chart-type');
+const chartTypeSelect = document.getElementById('chart-type'); 
 
 summaryMonthInput.addEventListener('change', displaySummary);
 chartTypeSelect.addEventListener('change', displaySummary);
 
 function displaySummary() {
   const selectedMonth = summaryMonthInput.value;
-  const chartType = chartTypeSelect.value;
+  const chartType = chartTypeSelect.value; 
 
-  let total = 0, fixedTotal = 0, variableTotal = 0;
-  let allCategoryTotals = {}, fixedCategoryTotals = {}, variableCategoryTotals = {};
+  let total = 0;
+  let fixedTotal = 0;
+  let variableTotal = 0;
+  
+  let allCategoryTotals = {};
+  let fixedCategoryTotals = {};
+  let variableCategoryTotals = {};
 
-  const filteredRecords = globalRecords.filter(record => record.date.startsWith(selectedMonth));
+  const filteredRecords = globalRecords.filter(record => {
+    return record.date.startsWith(selectedMonth);
+  });
 
   filteredRecords.forEach(record => {
     total += record.amount;
     allCategoryTotals[record.category] = (allCategoryTotals[record.category] || 0) + record.amount;
+    
     if (record.type === '固定費') {
       fixedTotal += record.amount;
       fixedCategoryTotals[record.category] = (fixedCategoryTotals[record.category] || 0) + record.amount;
@@ -417,17 +437,21 @@ function displaySummary() {
   document.getElementById('total-fixed').textContent = fixedTotal.toLocaleString();
   document.getElementById('total-variable').textContent = variableTotal.toLocaleString();
 
-  const chartLabels = [], chartData = [];
+  const chartLabels = [];
+  const chartData = [];
 
   if (chartType === 'type') {
     if (fixedTotal > 0) { chartLabels.push('固定費'); chartData.push(fixedTotal); }
     if (variableTotal > 0) { chartLabels.push('変動費'); chartData.push(variableTotal); }
   } else if (chartType === 'fixed') {
-    Object.entries(fixedCategoryTotals).sort((a, b) => b[1] - a[1]).forEach(([cat, amt]) => { chartLabels.push(cat); chartData.push(amt); });
+    const sorted = Object.entries(fixedCategoryTotals).sort((a, b) => b[1] - a[1]);
+    for (const [cat, amt] of sorted) { chartLabels.push(cat); chartData.push(amt); }
   } else if (chartType === 'variable') {
-    Object.entries(variableCategoryTotals).sort((a, b) => b[1] - a[1]).forEach(([cat, amt]) => { chartLabels.push(cat); chartData.push(amt); });
+    const sorted = Object.entries(variableCategoryTotals).sort((a, b) => b[1] - a[1]);
+    for (const [cat, amt] of sorted) { chartLabels.push(cat); chartData.push(amt); }
   } else {
-    Object.entries(allCategoryTotals).sort((a, b) => b[1] - a[1]).forEach(([cat, amt]) => { chartLabels.push(cat); chartData.push(amt); });
+    const sorted = Object.entries(allCategoryTotals).sort((a, b) => b[1] - a[1]);
+    for (const [cat, amt] of sorted) { chartLabels.push(cat); chartData.push(amt); }
   }
 
   const summaryCategoryList = document.getElementById('summary-category-list');
@@ -444,17 +468,36 @@ function displaySummary() {
 
 function drawChart(labels, data) {
   const ctx = document.getElementById('category-chart').getContext('2d');
-  if (summaryChart) summaryChart.destroy();
+  
+  if (summaryChart) {
+    summaryChart.destroy();
+  }
 
-  const colorfulPalette = [ '#E07A5F', '#3D405B', '#81B29A', '#F2CC8F', '#E8A598', '#6F7C85', '#A2D2FF', '#FFB703', '#219EBC' ];
+  const colorfulPalette = [
+    '#E07A5F', '#3D405B', '#81B29A', '#F2CC8F', '#E8A598', 
+    '#6F7C85', '#A2D2FF', '#FFB703', '#219EBC'
+  ];
 
   summaryChart = new Chart(ctx, {
     type: 'doughnut',
     data: {
       labels: labels,
-      datasets: [{ data: data, backgroundColor: colorfulPalette, borderWidth: 2, borderColor: '#ffffff' }]
+      datasets: [{
+        data: data,
+        backgroundColor: colorfulPalette,
+        borderWidth: 2,
+        borderColor: '#ffffff'
+      }]
     },
-    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'right',
+        }
+      }
+    }
   });
 }
 
@@ -475,9 +518,19 @@ document.addEventListener('DOMContentLoaded', () => {
   summaryMonthInput.value = currentMonthStr;
   recordMonthInput.value = currentMonthStr; 
   
-  // 画面の初期表示はonSnapshotのイベントが発火した際に自動的に行われます。
-  
   // ドラッグ＆ドロップの設定
-  new Sortable(document.getElementById('category-list-variable'), { animation: 150, handle: '.drag-handle', onEnd: updateCategoriesOrder });
-  new Sortable(document.getElementById('category-list-fixed'), { animation: 150, handle: '.drag-handle', onEnd: updateCategoriesOrder });
+  const listVariable = document.getElementById('category-list-variable');
+  const listFixed = document.getElementById('category-list-fixed');
+
+  new Sortable(listVariable, {
+    animation: 150,
+    handle: '.drag-handle',
+    onEnd: updateCategoriesOrder
+  });
+
+  new Sortable(listFixed, {
+    animation: 150,
+    handle: '.drag-handle',
+    onEnd: updateCategoriesOrder
+  });
 });
