@@ -10,113 +10,182 @@
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
 </head>
 <body>
-  <div class="app-container">
-    
-    <header>
-      <h2>家計簿システム</h2>
-      <nav>
-        <button id="nav-record" class="active">支出記録</button>
-        <button id="nav-summary">集計</button>
-        <button id="nav-settings">設定・管理</button>
-      </nav>
-    </header>
 
-    <section id="view-record" class="record-layout">
-      <div class="form-area">
-        <form id="kakeibo-form">
+  <div id="screen-login" class="app-screen active">
+    <div class="app-container" style="max-width: 400px; margin-top: 50px;">
+      <h2>家計簿ログイン</h2>
+      
+      <div id="login-form-area">
+        <form id="login-form">
           <div class="input-group">
-            <label>日付</label>
-            <input type="date" id="date" required>
+            <label>メールアドレス</label>
+            <input type="email" id="login-email" required>
           </div>
-          
           <div class="input-group">
-            <label>分類</label>
-            <select id="record-type" required>
+            <label>パスワード</label>
+            <input type="password" id="login-password" required>
+          </div>
+          <button type="submit" class="action-btn">ログイン</button>
+        </form>
+        <div style="text-align: center; margin-top: 20px;">
+          <p style="font-size: 13px; color: #666;">はじめての方はこちら</p>
+          <button id="show-register-btn" class="text-link">新規アカウント作成</button>
+        </div>
+      </div>
+
+      <div id="register-form-area" class="hidden">
+        <form id="register-form">
+          <div class="input-group">
+            <label>メールアドレス</label>
+            <input type="email" id="register-email" required>
+          </div>
+          <div class="input-group">
+            <label>パスワード (6文字以上)</label>
+            <input type="password" id="register-password" required>
+          </div>
+          <button type="submit" class="action-btn" style="background-color: #333; color: #fff;">登録して始める</button>
+        </form>
+        <div style="text-align: center; margin-top: 20px;">
+          <button id="show-login-btn" class="text-link">ログイン画面に戻る</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="screen-mypage" class="app-screen hidden">
+    <div class="app-container" style="max-width: 600px; margin-top: 20px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px;">
+        <h2 style="border: none; margin: 0; padding: 0;">マイページ</h2>
+        <button id="logout-btn" class="edit-btn">ログアウト</button>
+      </div>
+
+      <div class="settings-block">
+        <h4>新しい家計簿を作る</h4>
+        <form id="create-book-form" style="display: flex; gap: 10px;">
+          <input type="text" id="new-book-name" placeholder="例：家庭用、自分用、旅行用など" required style="flex: 1;">
+          <button type="submit" class="action-btn" style="width: auto; margin-top: 0; padding: 10px 20px;">作成</button>
+        </form>
+      </div>
+
+      <div class="settings-block" style="margin-top: 30px;">
+        <h4>あなたの家計簿一覧</h4>
+        <ul id="book-list">
+          </ul>
+      </div>
+    </div>
+  </div>
+
+  <div id="screen-kakeibo" class="app-screen hidden">
+    <div class="app-container">
+      
+      <header>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+          <button id="back-to-mypage-btn" class="text-link">← マイページに戻る</button>
+          <span id="current-book-name-display" style="font-weight: bold; background: #eee; padding: 4px 10px; border-radius: 4px; font-size: 14px;"></span>
+        </div>
+        <h2>家計簿システム</h2>
+        <nav>
+          <button id="nav-record" class="active">支出記録</button>
+          <button id="nav-summary">集計</button>
+          <button id="nav-settings">設定・管理</button>
+        </nav>
+      </header>
+
+      <section id="view-record" class="record-layout">
+        <div class="form-area">
+          <form id="kakeibo-form">
+            <div class="input-group">
+              <label>日付</label>
+              <input type="date" id="date" required>
+            </div>
+            <div class="input-group">
+              <label>分類</label>
+              <select id="record-type" required>
+                <option value="変動費">変動費</option>
+                <option value="固定費">固定費</option>
+              </select>
+            </div>
+            <div class="input-group">
+              <label>カテゴリ</label>
+              <select id="category" required></select>
+            </div>
+            <div class="input-group">
+              <label>金額</label>
+              <input type="number" id="amount" placeholder="0" required>
+            </div>
+            <div class="input-group">
+              <label>メモ（任意）</label>
+              <input type="text" id="memo" placeholder="備考など">
+            </div>
+            <button type="submit" id="submit-btn" class="action-btn">記録を保存</button>
+          </form>
+        </div>
+        
+        <div class="list-area">
+          <div class="list-header">
+            <h4>記録一覧</h4>
+            <input type="month" id="record-month">
+          </div>
+          <ul id="record-list"></ul>
+        </div>
+      </section>
+
+      <section id="view-summary" class="hidden">
+        <div class="summary-header">
+          <h3>集計</h3>
+          <input type="month" id="summary-month">
+        </div>
+        
+        <div class="summary-box">
+          <p>総合計: <strong id="total-amount">0</strong> 円</p>
+          <p>固定費: <span id="total-fixed" class="text-fixed">0</span> 円</p>
+          <p>変動費: <span id="total-variable" class="text-variable">0</span> 円</p>
+        </div>
+
+        <div class="input-group" style="margin-top: 15px;">
+          <select id="chart-type">
+            <option value="all">全ての費用内訳</option>
+            <option value="type">固定費・変動費の割合</option>
+            <option value="fixed">固定費の内訳のみ</option>
+            <option value="variable">変動費の内訳のみ</option>
+          </select>
+        </div>
+
+        <div class="chart-container">
+          <canvas id="category-chart"></canvas>
+        </div>
+
+        <h4>内訳詳細</h4>
+        <ul id="summary-category-list"></ul>
+      </section>
+
+      <section id="view-settings" class="hidden">
+        <h3>設定・管理</h3>
+        
+        <div class="settings-block">
+          <h4>カテゴリ追加・編集</h4>
+          <form id="category-form">
+            <input type="text" id="new-category" placeholder="名称" required>
+            <select id="new-category-type" required>
               <option value="変動費">変動費</option>
               <option value="固定費">固定費</option>
             </select>
+            <button type="submit" id="category-submit-btn" class="action-btn">追加</button>
+          </form>
+          
+          <div class="category-groups">
+            <details class="category-details" open>
+              <summary class="group-title-variable">変動費</summary>
+              <ul id="category-list-variable"></ul>
+            </details>
+            <details class="category-details" open>
+              <summary class="group-title-fixed">固定費</summary>
+              <ul id="category-list-fixed"></ul>
+            </details>
           </div>
-
-          <div class="input-group">
-            <label>カテゴリ</label>
-            <select id="category" required></select>
-          </div>
-          <div class="input-group">
-            <label>金額</label>
-            <input type="number" id="amount" placeholder="0" required>
-          </div>
-          <div class="input-group">
-            <label>メモ（任意）</label>
-            <input type="text" id="memo" placeholder="備考など">
-          </div>
-          <button type="submit" id="submit-btn" class="action-btn">記録を保存</button>
-        </form>
-      </div>
-      
-      <div class="list-area">
-        <div class="list-header">
-          <h4>記録一覧</h4>
-          <input type="month" id="record-month">
         </div>
-        <ul id="record-list"></ul>
-      </div>
-    </section>
-
-    <section id="view-summary" class="hidden">
-      <div class="summary-header">
-        <h3>集計</h3>
-        <input type="month" id="summary-month">
-      </div>
-      
-      <div class="summary-box">
-        <p>総合計: <strong id="total-amount">0</strong> 円</p>
-        <p>固定費: <span id="total-fixed" class="text-fixed">0</span> 円</p>
-        <p>変動費: <span id="total-variable" class="text-variable">0</span> 円</p>
-      </div>
-
-      <div class="input-group" style="margin-top: 15px;">
-        <select id="chart-type">
-          <option value="all">全ての費用内訳</option>
-          <option value="type">固定費・変動費の割合</option>
-          <option value="fixed">固定費の内訳のみ</option>
-          <option value="variable">変動費の内訳のみ</option>
-        </select>
-      </div>
-
-      <div class="chart-container">
-        <canvas id="category-chart"></canvas>
-      </div>
-
-      <h4>内訳詳細</h4>
-      <ul id="summary-category-list"></ul>
-    </section>
-
-    <section id="view-settings" class="hidden">
-      <h3>設定・管理</h3>
-      
-      <div class="settings-block">
-        <h4>カテゴリ追加・編集</h4>
-        <form id="category-form">
-          <input type="text" id="new-category" placeholder="名称" required>
-          <select id="new-category-type" required>
-            <option value="変動費">変動費</option>
-            <option value="固定費">固定費</option>
-          </select>
-          <button type="submit" id="category-submit-btn" class="action-btn">追加</button>
-        </form>
-        
-        <div class="category-groups">
-          <details class="category-details" open>
-            <summary class="group-title-variable">変動費</summary>
-            <ul id="category-list-variable"></ul>
-          </details>
-          <details class="category-details" open>
-            <summary class="group-title-fixed">固定費</summary>
-            <ul id="category-list-fixed"></ul>
-          </details>
-        </div>
-      </div>
-    </section>
+      </section>
+    </div>
   </div>
 
   <script type="module" src="script.js"></script>
