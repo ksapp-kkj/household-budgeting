@@ -8,9 +8,24 @@ body {
   justify-content: center;
 }
 
+/* 画面切り替え用のクラス */
+.app-screen {
+  display: none;
+  width: 100%;
+}
+.app-screen.active {
+  display: block;
+  animation: fadeIn 0.3s ease;
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .app-container {
   width: 100%;
   max-width: 1000px;
+  margin: 0 auto;
   background-color: #ffffff;
   border: 2px solid #333333;
   border-radius: 4px;
@@ -118,6 +133,20 @@ input:focus, select:focus {
 .action-btn:hover {
   background-color: #333333;
   color: #ffffff;
+}
+
+/* リンク風ボタン */
+.text-link {
+  background: none;
+  border: none;
+  color: #333;
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0;
+}
+.text-link:hover {
+  color: #d97736;
 }
 
 #category-form {
@@ -232,6 +261,13 @@ ul {
   justify-content: space-between;
   align-items: center;
 }
+.category-card.book-card {
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+.category-card.book-card:hover {
+  background-color: #f9f9f9;
+}
 
 .category-item-left {
   display: flex;
@@ -250,23 +286,10 @@ ul {
   font-weight: bold;
 }
 
-.type-variable {
-  background-color: #E07A5F;
-}
-
-.text-variable {
-  color: #E07A5F;
-  font-weight: bold;
-}
-
-.type-fixed {
-  background-color: #3D405B;
-}
-
-.text-fixed {
-  color: #3D405B;
-  font-weight: bold;
-}
+.type-variable { background-color: #E07A5F; }
+.text-variable { color: #E07A5F; font-weight: bold; }
+.type-fixed { background-color: #3D405B; }
+.text-fixed { color: #3D405B; font-weight: bold; }
 
 .action-buttons, .category-actions {
   display: flex;
@@ -284,25 +307,10 @@ ul {
   border-radius: 4px;
 }
 
-.edit-btn {
-  color: #333;
-  border-color: #333;
-}
-
-.edit-btn:hover {
-  background-color: #333;
-  color: #ffffff;
-}
-
-.delete-btn {
-  color: #ff4d4d;
-  border-color: #ff4d4d;
-}
-
-.delete-btn:hover {
-  background-color: #ff4d4d;
-  color: #ffffff;
-}
+.edit-btn { color: #333; border-color: #333; }
+.edit-btn:hover { background-color: #333; color: #ffffff; }
+.delete-btn { color: #ff4d4d; border-color: #ff4d4d; }
+.delete-btn:hover { background-color: #ff4d4d; color: #ffffff; }
 
 .drag-handle {
   cursor: grab;
@@ -311,19 +319,10 @@ ul {
   font-size: 18px;
   user-select: none;
 }
+.drag-handle:active { cursor: grabbing; }
+.sortable-ghost { opacity: 0.4; background-color: #f9f9f9; }
 
-.drag-handle:active {
-  cursor: grabbing;
-}
-
-.sortable-ghost {
-  opacity: 0.4;
-  background-color: #f9f9f9;
-}
-
-.hidden {
-  display: none !important;
-}
+.hidden { display: none !important; }
 
 .summary-header {
   display: flex;
@@ -333,62 +332,18 @@ ul {
   margin-bottom: 15px;
   padding-bottom: 10px;
 }
+.summary-header h3 { border-bottom: none; margin: 0; padding: 0; }
+.summary-header input[type="month"] { width: auto; padding: 5px 10px; font-size: 14px; }
 
-.summary-header h3 {
-  border-bottom: none;
-  margin: 0;
-  padding: 0;
-}
+.chart-container { position: relative; height: 250px; width: 100%; margin: 20px 0; }
+#summary-category-list li { border-bottom: 1px dashed #ccc; padding: 10px 5px; display: flex; justify-content: space-between; }
 
-.summary-header input[type="month"] {
-  width: auto;
-  padding: 5px 10px;
-  font-size: 14px;
-}
-
-.chart-container {
-  position: relative;
-  height: 250px;
-  width: 100%;
-  margin: 20px 0;
-}
-
-#summary-category-list li {
-  border-bottom: 1px dashed #ccc;
-  padding: 10px 5px;
-  display: flex;
-  justify-content: space-between;
-}
-
-.edit-mode-input {
-  background-color: #fff9c4 !important;
-  border-color: #fbc02d !important;
-  transition: all 0.3s;
-}
-
-.edit-mode-btn {
-  background-color: #fbc02d !important;
-  color: #333333 !important;
-  border-color: #fbc02d !important;
-  transition: all 0.3s;
-}
-
-.edit-mode-btn:hover {
-  background-color: #f9a825 !important;
-}
+.edit-mode-input { background-color: #fff9c4 !important; border-color: #fbc02d !important; transition: all 0.3s; }
+.edit-mode-btn { background-color: #fbc02d !important; color: #333333 !important; border-color: #fbc02d !important; transition: all 0.3s; }
+.edit-mode-btn:hover { background-color: #f9a825 !important; }
 
 @media (min-width: 600px) {
-  .record-layout {
-    display: flex;
-    gap: 60px;
-    align-items: flex-start;
-  }
-  .form-area {
-    flex: 1;
-    position: sticky;
-    top: 20px;
-  }
-  .list-area {
-    flex: 2;
-  }
+  .record-layout { display: flex; gap: 60px; align-items: flex-start; }
+  .form-area { flex: 1; position: sticky; top: 20px; }
+  .list-area { flex: 2; }
 }
