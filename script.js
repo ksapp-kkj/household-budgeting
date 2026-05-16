@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-app.js";
-import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, writeBatch, query, where, orderBy } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-firestore.js";
+import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, writeBatch, query, where } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-firestore.js";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-auth.js";
 
 const firebaseConfig = {
@@ -19,7 +19,7 @@ auth.languageCode = 'ja';
 
 // グローバル状態
 let currentUser = null;
-let currentBookId = null; // 選択中の家計簿ID
+let currentBookId = null; 
 let globalBooks = [];
 let globalCategories = [];
 let globalRecords = [];
@@ -45,7 +45,7 @@ onAuthStateChanged(auth, (user) => {
   if (user) {
     currentUser = user;
     showScreen('screen-mypage');
-    subscribeToBooks(); // マイページのリストを取得
+    subscribeToBooks(); 
   } else {
     currentUser = null;
     currentBookId = null;
@@ -93,7 +93,7 @@ document.getElementById('logout-btn').onclick = () => {
 };
 
 // ==========================================
-// 2. マイページ（家計簿の作成・選択）
+// 2. マイページ（家計簿の作成・選択・名称編集）
 // ==========================================
 function subscribeToBooks() {
   if (!currentUser) return;
@@ -101,7 +101,6 @@ function subscribeToBooks() {
   
   unsubscribeBooks = onSnapshot(q, (snapshot) => {
     globalBooks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    // 作成日時でソート
     globalBooks.sort((a, b) => a.createdAt - b.createdAt);
     
     const bookList = document.getElementById('book-list');
@@ -120,13 +119,26 @@ function subscribeToBooks() {
           <span style="font-size:20px; margin-right:10px;">📘</span>
           <span style="font-weight:bold;">${book.name}</span>
         </div>
-        <button class="delete-btn" style="padding:4px 8px;">削除</button>
+        <div class="category-actions">
+          <button class="edit-btn" style="padding:4px 8px;">編集</button>
+          <button class="delete-btn" style="padding:4px 8px;">削除</button>
+        </div>
       `;
       
-      // クリックでその家計簿を開く
+      // カードクリックで家計簿を開く（ボタンクリック時は除外）
       li.onclick = (e) => {
-        if (e.target.tagName === 'BUTTON') return; // 削除ボタンのクリックは除く
+        if (e.target.tagName === 'BUTTON') return; 
         openKakeibo(book.id, book.name);
+      };
+      
+      // 名称の変更機能を追加
+      li.querySelector('.edit-btn').onclick = async () => {
+        const newName = prompt("新しい家計簿の名前を入力してください:", book.name);
+        if (newName !== null && newName.trim() !== "") {
+          await updateDoc(doc(db, 'kakeibo_books', book.id), {
+            name: newName.trim()
+          });
+        }
       };
       
       // 家計簿の削除
@@ -161,7 +173,7 @@ function openKakeibo(bookId, bookName) {
   currentBookId = bookId;
   document.getElementById('current-book-name-display').textContent = `開いている家計簿：${bookName}`;
   showScreen('screen-kakeibo');
-  subscribeToKakeiboData(); // 開いた家計簿のデータを読み込む
+  subscribeToKakeiboData(); 
 }
 
 // マイページに戻る
@@ -174,7 +186,7 @@ document.getElementById('back-to-mypage-btn').onclick = () => {
 
 
 // ==========================================
-// 3. 家計簿本体のデータ同期（選択したbookIdで絞り込み）
+// 3. 家計簿本体のデータ同期
 // ==========================================
 function subscribeToKakeiboData() {
   if (!currentUser || !currentBookId) return;
@@ -185,7 +197,7 @@ function subscribeToKakeiboData() {
   unsubscribeCategories = onSnapshot(catQuery, (snapshot) => {
     globalCategories = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     if (globalCategories.length === 0) {
-      initializeDefaultCategories(); // その家計簿にカテゴリがない場合は初期作成
+      initializeDefaultCategories(); 
       return;
     }
     globalCategories.sort((a, b) => (a.order || 0) - (b.order || 0));
@@ -236,7 +248,6 @@ async function initializeDefaultCategories() {
   ];
   const batch = writeBatch(db);
   defaultCats.forEach(cat => {
-    // どの家計簿(bookId)の、誰(uid)のデータかを持たせる
     batch.set(doc(collection(db, 'kakeibo_v2_categories')), { ...cat, uid: currentUser.uid, bookId: currentBookId });
   });
   await batch.commit();
