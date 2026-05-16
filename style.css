@@ -106,6 +106,7 @@ form {
   font-weight: bold;
 }
 
+/* ★修正箇所：入力欄の共通設定にはみ出し防止を追加 */
 input, select {
   background-color: #fcfcfc;
   border: 1px solid #cccccc;
@@ -115,15 +116,17 @@ input, select {
   font-family: 'Space Mono', 'Noto Sans JP', sans-serif;
   font-size: 16px;
   width: 100%;
+  max-width: 100%; /* 画面幅を超えないようにする */
+  min-width: 0; /* ★特効薬：スマホ等でブラウザが勝手に横幅を広げるのを強制解除 */
   box-sizing: border-box;
   transition: border-color 0.2s;
 }
 
-/* スマホでの日付入力欄のはみ出しを確実に防止 */
+/* ★修正箇所：日付入力のスマホ特有デザイン仕様をリセット */
 input[type="date"] {
-  width: 100%;
-  max-width: 100%;
-  box-sizing: border-box;
+  -webkit-appearance: none;
+  appearance: none;
+  min-height: 40px; /* タップしやすい高さを確保 */
 }
 
 input:focus, select:focus {
