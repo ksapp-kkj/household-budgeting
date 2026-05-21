@@ -17,7 +17,6 @@ const db = getFirestore(app);
 const auth = getAuth(app);
 auth.languageCode = 'ja';
 
-// グローバル状態
 let currentUser = null;
 let currentBookId = null; 
 let globalBooks = [];
@@ -36,9 +35,6 @@ function showScreen(screenId) {
   });
 }
 
-// ==========================================
-// 1. 認証機能とログイン画面
-// ==========================================
 onAuthStateChanged(auth, (user) => {
   if (user) {
     currentUser = user;
@@ -54,56 +50,26 @@ onAuthStateChanged(auth, (user) => {
   }
 });
 
-document.getElementById('show-register-btn').onclick = () => {
-  document.getElementById('login-form-area').classList.add('hidden');
-  document.getElementById('register-form-area').classList.remove('hidden');
-};
-document.getElementById('show-login-btn').onclick = () => {
-  document.getElementById('register-form-area').classList.add('hidden');
-  document.getElementById('login-form-area').classList.remove('hidden');
-};
+document.getElementById('show-register-btn').onclick = () => { document.getElementById('login-form-area').classList.add('hidden'); document.getElementById('register-form-area').classList.remove('hidden'); };
+document.getElementById('show-login-btn').onclick = () => { document.getElementById('register-form-area').classList.add('hidden'); document.getElementById('login-form-area').classList.remove('hidden'); };
 
 document.getElementById('login-form').onsubmit = async (e) => {
   e.preventDefault();
-  const email = document.getElementById('login-email').value;
-  const pass = document.getElementById('login-password').value;
-  try {
-    await signInWithEmailAndPassword(auth, email, pass);
-  } catch(error) {
-    alert("ログインに失敗しました。認証情報を確認してください。");
-  }
+  try { await signInWithEmailAndPassword(auth, document.getElementById('login-email').value, document.getElementById('login-password').value); }
+  catch(error) { alert("ログインに失敗しました。認証情報を確認してください。"); }
 };
 
 document.getElementById('register-form').onsubmit = async (e) => {
   e.preventDefault();
-  const email = document.getElementById('register-email').value;
-  const pass = document.getElementById('register-password').value;
-  try {
-    await createUserWithEmailAndPassword(auth, email, pass);
-    alert("アカウントを作成しました！");
-  } catch(error) {
-    alert("エラー: " + error.message);
-  }
+  try { await createUserWithEmailAndPassword(auth, document.getElementById('register-email').value, document.getElementById('register-password').value); alert("アカウントを作成しました！"); }
+  catch(error) { alert("エラー: " + error.message); }
 };
 
-document.getElementById('logout-btn').onclick = () => {
-  if(confirm("ログアウトしますか？")) signOut(auth);
-};
+document.getElementById('logout-btn').onclick = () => { if(confirm("ログアウトしますか？")) signOut(auth); };
 
-// ==========================================
-// 2. マイページ（家計簿一覧・作成・招待/共有参加）
-// ==========================================
 function subscribeToBooks() {
   if (!currentUser) return;
-  
-  // ★修正箇所：自分が作った古い家計簿（uid一致）と、新しく共有された家計簿（membersに含まれる）をOR条件で両方取得する
-  const q = query(
-    collection(db, 'kakeibo_books'), 
-    or(
-      where('uid', '==', currentUser.uid),
-      where('members', 'array-contains', currentUser.uid)
-    )
-  );
+  const q = query(collection(db, 'kakeibo_books'), or(where('uid', '==', currentUser.uid), where('members', 'array-contains', currentUser.uid)));
   
   unsubscribeBooks = onSnapshot(q, (snapshot) => {
     globalBooks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -120,42 +86,36 @@ function subscribeToBooks() {
     globalBooks.forEach(book => {
       const li = document.createElement('li');
       li.className = 'category-card book-card';
+      
+      // ★変更：3段レイアウト構築用のHTML構造
       li.innerHTML = `
-        <div class="category-item-left">
-          <span style="font-size:20px; margin-right:10px;">📘</span>
-          <span style="font-weight:bold;">${book.name}</span>
+        <div class="book-info">
+          <span style="font-size:20px; margin-right:8px;">📘</span>
+          <span>${book.name}</span>
         </div>
-        <div class="category-actions">
-          <button class="edit-btn invite-code-btn" style="padding:4px 8px; border-color:#d97736; color:#d97736;">招待コード</button>
-          <button class="edit-btn rename-btn" style="padding:4px 8px;">編集</button>
-          <button class="delete-btn" style="padding:4px 8px;">削除</button>
+        <div class="book-actions-group primary">
+          <button class="edit-btn rename-btn">編集</button>
+          <button class="delete-btn">削除</button>
+        </div>
+        <div class="book-actions-group secondary">
+          <button class="edit-btn invite-code-btn" style="border-color:#d97736; color:#d97736;">招待コード</button>
         </div>
       `;
       
-      li.onclick = (e) => {
-        if (e.target.tagName === 'BUTTON') return; 
-        openKakeibo(book.id, book.name);
-      };
+      li.onclick = (e) => { if (e.target.tagName === 'BUTTON') return; openKakeibo(book.id, book.name); };
       
       li.querySelector('.invite-code-btn').onclick = () => {
-        navigator.clipboard.writeText(book.id).then(() => {
-          alert(`招待コード（ID）をコピーしました！\nこのコードを家族のマイページ画面で入力してもらってください。\n\nコード: ${book.id}`);
-        }).catch(() => {
-          alert(`お使いのブラウザでは自動コピーできませんでした。手動でコピーしてください: ${book.id}`);
-        });
+        navigator.clipboard.writeText(book.id).then(() => { alert(`招待コード（ID）をコピーしました！\nこのコードを家族のマイページ画面で入力してもらってください。\n\nコード: ${book.id}`); })
+        .catch(() => { alert(`手動でコピーしてください: ${book.id}`); });
       };
       
       li.querySelector('.rename-btn').onclick = async () => {
         const newName = prompt("新しい家計簿の名前を入力してください:", book.name);
-        if (newName !== null && newName.trim() !== "") {
-          await updateDoc(doc(db, 'kakeibo_books', book.id), { name: newName.trim() });
-        }
+        if (newName !== null && newName.trim() !== "") await updateDoc(doc(db, 'kakeibo_books', book.id), { name: newName.trim() });
       };
       
       li.querySelector('.delete-btn').onclick = async () => {
-        if (confirm(`「${book.name}」を削除しますか？\n※全メンバーのマイページから表示されなくなります。`)) {
-          await deleteDoc(doc(db, 'kakeibo_books', book.id));
-        }
+        if (confirm(`「${book.name}」を削除しますか？\n※全メンバーのマイページから表示されなくなります。`)) await deleteDoc(doc(db, 'kakeibo_books', book.id));
       };
       
       bookList.appendChild(li);
@@ -166,14 +126,8 @@ function subscribeToBooks() {
 document.getElementById('create-book-form').onsubmit = async (e) => {
   e.preventDefault();
   const nameInput = document.getElementById('new-book-name');
-  const name = nameInput.value.trim();
-  if (name) {
-    await addDoc(collection(db, 'kakeibo_books'), {
-      name: name,
-      uid: currentUser.uid,
-      members: [currentUser.uid], 
-      createdAt: Date.now()
-    });
+  if (nameInput.value.trim()) {
+    await addDoc(collection(db, 'kakeibo_books'), { name: nameInput.value.trim(), uid: currentUser.uid, members: [currentUser.uid], createdAt: Date.now() });
     nameInput.value = '';
   }
 };
@@ -181,17 +135,11 @@ document.getElementById('create-book-form').onsubmit = async (e) => {
 document.getElementById('join-book-form').onsubmit = async (e) => {
   e.preventDefault();
   const idInput = document.getElementById('join-book-id');
-  const bookId = idInput.value.trim();
-  if (bookId) {
+  if (idInput.value.trim()) {
     try {
-      await updateDoc(doc(db, 'kakeibo_books', bookId), {
-        members: arrayUnion(currentUser.uid)
-      });
-      alert("共有家計簿に参加しました！一覧を確認してください。");
-      idInput.value = '';
-    } catch (err) {
-      alert("参加に失敗しました。コードが正しいか確認してください。");
-    }
+      await updateDoc(doc(db, 'kakeibo_books', idInput.value.trim()), { members: arrayUnion(currentUser.uid) });
+      alert("共有家計簿に参加しました！一覧を確認してください。"); idInput.value = '';
+    } catch (err) { alert("参加に失敗しました。コードが正しいか確認してください。"); }
   }
 };
 
@@ -209,10 +157,6 @@ document.getElementById('back-to-mypage-btn').onclick = () => {
   showScreen('screen-mypage');
 };
 
-
-// ==========================================
-// 3. 家計簿本体のデータ同期
-// ==========================================
 function subscribeToKakeiboData() {
   if (!currentUser || !currentBookId) return;
 
@@ -221,24 +165,30 @@ function subscribeToKakeiboData() {
 
   unsubscribeCategories = onSnapshot(catQuery, (snapshot) => {
     globalCategories = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    if (globalCategories.length === 0) {
-      initializeDefaultCategories(); 
-      return;
-    }
+    if (globalCategories.length === 0) { initializeDefaultCategories(); return; }
     globalCategories.sort((a, b) => (a.order || 0) - (b.order || 0));
-    displayCategories();
-    updateCategorySelect();
+    displayCategories(); updateCategorySelect();
   });
 
+  // ★リアルタイム更新（パートナーが編集したときにも即時反映）
   unsubscribeRecords = onSnapshot(recQuery, (snapshot) => {
     globalRecords = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     displayRecords();
     displaySummary();
     
+    // モーダル表示中に裏側でデータが更新・削除された場合の安全な同期
     if (selectedRecordForModal) {
       const updated = globalRecords.find(r => r.id === selectedRecordForModal.id);
       if (updated) {
-        openModal(updated);
+        selectedRecordForModal = updated;
+        // もし閲覧モードで開いているなら、最新のテキストに書き換える
+        if (!document.getElementById('modal-view-mode').classList.contains('hidden')) {
+          document.getElementById('modal-date').textContent = updated.date;
+          document.getElementById('modal-type').textContent = updated.type;
+          document.getElementById('modal-category').textContent = updated.category;
+          document.getElementById('modal-amount').textContent = `${updated.amount.toLocaleString()} 円`;
+          document.getElementById('modal-memo').textContent = updated.memo || '（なし）';
+        }
       } else {
         closeModal();
       }
@@ -246,20 +196,12 @@ function subscribeToKakeiboData() {
   });
 }
 
-
-// ==========================================
-// 4. アプリのUI操作・表示制御
-// ==========================================
-const navRecord = document.getElementById('nav-record');
-const navSummary = document.getElementById('nav-summary');
-const navSettings = document.getElementById('nav-settings');
-const viewRecord = document.getElementById('view-record');
-const viewSummary = document.getElementById('view-summary');
-const viewSettings = document.getElementById('view-settings');
+const navRecord = document.getElementById('nav-record'), navSummary = document.getElementById('nav-summary'), navSettings = document.getElementById('nav-settings');
+const viewRecord = document.getElementById('view-record'), viewSummary = document.getElementById('view-summary'), viewSettings = document.getElementById('view-settings');
 
 function switchView(showView, activeBtn) {
-  viewRecord.classList.add('hidden'); viewSummary.classList.add('hidden'); viewSettings.classList.add('hidden');
-  navRecord.classList.remove('active'); navSummary.classList.remove('active'); navSettings.classList.remove('active');
+  [viewRecord, viewSummary, viewSettings].forEach(v => v.classList.add('hidden'));
+  [navRecord, navSummary, navSettings].forEach(b => b.classList.remove('active'));
   showView.classList.remove('hidden'); activeBtn.classList.add('active');
   if (showView === viewSummary) displaySummary();
 }
@@ -268,22 +210,14 @@ navSummary.onclick = () => switchView(viewSummary, navSummary);
 navSettings.onclick = () => switchView(viewSettings, navSettings);
 
 
-// --- カテゴリ管理 ---
 let currentCategoryEditId = null;
-const categoryForm = document.getElementById('category-form');
-const recordTypeSelect = document.getElementById('record-type');
-const categorySelect = document.getElementById('category');
-const categorySubmitBtn = document.getElementById('category-submit-btn');
+const categoryForm = document.getElementById('category-form'), recordTypeSelect = document.getElementById('record-type');
+const categorySelect = document.getElementById('category'), categorySubmitBtn = document.getElementById('category-submit-btn');
 
 async function initializeDefaultCategories() {
-  const defaultCats = [
-    { name: '食費', type: '変動費', order: 0 }, { name: '日用品', type: '変動費', order: 1 },
-    { name: '家賃', type: '固定費', order: 2 }, { name: '交通費', type: '変動費', order: 3 }, { name: 'その他', type: '変動費', order: 4 }
-  ];
+  const defaultCats = [ { name: '食費', type: '変動費', order: 0 }, { name: '日用品', type: '変動費', order: 1 }, { name: '家賃', type: '固定費', order: 2 }, { name: '交通費', type: '変動費', order: 3 }, { name: 'その他', type: '変動費', order: 4 } ];
   const batch = writeBatch(db);
-  defaultCats.forEach(cat => {
-    batch.set(doc(collection(db, 'kakeibo_v2_categories')), { ...cat, uid: currentUser.uid, bookId: currentBookId });
-  });
+  defaultCats.forEach(cat => batch.set(doc(collection(db, 'kakeibo_v2_categories')), { ...cat, uid: currentUser.uid, bookId: currentBookId }));
   await batch.commit();
 }
 
@@ -296,11 +230,10 @@ function updateCategorySelect() {
 recordTypeSelect.addEventListener('change', updateCategorySelect);
 
 function displayCategories() {
-  const listVar = document.getElementById('category-list-variable');
-  const listFix = document.getElementById('category-list-fixed');
+  const listVar = document.getElementById('category-list-variable'), listFix = document.getElementById('category-list-fixed');
   listVar.innerHTML = ''; listFix.innerHTML = '';
   globalCategories.forEach((cat) => {
-    const li = document.createElement('li'); li.dataset.id = cat.id; li.className = 'category-card';
+    const li = document.createElement('li'); li.dataset.id = cat.id; li.className = 'category-card category-item';
     const typeClass = cat.type === '固定費' ? 'type-fixed' : 'type-variable';
     li.innerHTML = `<div class="category-item-left"><span class="drag-handle">≡</span><span><span class="type-label ${typeClass}">${cat.type}</span>${cat.name}</span></div><div class="category-actions"><button class="edit-btn">編集</button><button class="delete-btn">削除</button></div>`;
     
@@ -322,7 +255,7 @@ function displayCategories() {
 
 categoryForm.addEventListener('submit', async (e) => {
   e.preventDefault();
-  const name = document.getElementById('new-category').value.trim(); const type = document.getElementById('new-category-type').value;
+  const name = document.getElementById('new-category').value.trim(), type = document.getElementById('new-category-type').value;
   if (name !== '') {
     if (currentCategoryEditId) {
       const oldName = globalCategories.find(c => c.id === currentCategoryEditId).name;
@@ -339,30 +272,19 @@ categoryForm.addEventListener('submit', async (e) => {
   }
 });
 
-
-// --- 支出記録 ---
+// 新規記録フォーム
 const form = document.getElementById('kakeibo-form');
 const recordList = document.getElementById('record-list');
-const submitBtn = document.getElementById('submit-btn');
 const recordMonthInput = document.getElementById('record-month');
-let currentEditId = null;
 
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
   const data = {
     date: document.getElementById('date').value, type: document.getElementById('record-type').value,
     category: document.getElementById('category').value, amount: parseInt(document.getElementById('amount').value, 10),
-    memo: document.getElementById('memo').value.trim(),
-    uid: currentUser.uid, bookId: currentBookId
+    memo: document.getElementById('memo').value.trim(), uid: currentUser.uid, bookId: currentBookId
   };
-
-  if (currentEditId) {
-    await updateDoc(doc(db, 'kakeibo_v2_records', currentEditId), data);
-    currentEditId = null; submitBtn.textContent = '記録を保存';
-    ['date','record-type','category','amount','memo'].forEach(id => document.getElementById(id).classList.remove('edit-mode-input')); submitBtn.classList.remove('edit-mode-btn');
-  } else {
-    await addDoc(collection(db, 'kakeibo_v2_records'), data);
-  }
+  await addDoc(collection(db, 'kakeibo_v2_records'), data);
   document.getElementById('amount').value = ''; document.getElementById('memo').value = '';
 });
 
@@ -374,16 +296,13 @@ function displayRecords() {
 
   displayData.forEach(item => {
     const li = document.createElement('li');
-    const displayDate = item.date.substring(5); 
-    
     li.innerHTML = `
       <div class="record-minimal-left">
-        <span class="record-minimal-date">${displayDate}</span>
+        <span class="record-minimal-date">${item.date.substring(5)}</span>
         <span class="record-minimal-cat">【${item.category}】${item.memo ? item.memo : ''}</span>
       </div>
       <span class="record-minimal-amount">${item.amount.toLocaleString()}円</span>
     `;
-    
     li.onclick = () => openModal(item);
     recordList.appendChild(li);
   });
@@ -391,17 +310,42 @@ function displayRecords() {
 recordMonthInput.addEventListener('change', displayRecords);
 
 
-// --- モーダルの開閉・操作処理 ---
+// ★変更：モーダル内での編集機能の制御
 const detailModal = document.getElementById('detail-modal');
 const modalCloseBtn = document.getElementById('modal-close-btn');
+const modalViewMode = document.getElementById('modal-view-mode');
+const modalEditMode = document.getElementById('modal-edit-mode');
+const modalTitle = document.getElementById('modal-title');
+const modalEditCategorySelect = document.getElementById('modal-edit-category');
+
+function updateModalEditCategorySelect(selectedType) {
+  modalEditCategorySelect.innerHTML = '';
+  globalCategories.filter(cat => cat.type === selectedType).forEach(cat => {
+    const opt = document.createElement('option'); 
+    opt.value = cat.name; opt.textContent = cat.name; 
+    modalEditCategorySelect.appendChild(opt);
+  });
+}
+
+document.getElementById('modal-edit-type').addEventListener('change', (e) => {
+  updateModalEditCategorySelect(e.target.value);
+});
 
 function openModal(item) {
   selectedRecordForModal = item;
+  
+  // モーダルを開くときは常に閲覧モードにする
+  modalViewMode.classList.remove('hidden');
+  modalEditMode.classList.add('hidden');
+  modalTitle.textContent = '記録の詳細';
+
+  // 閲覧用のデータをセット
   document.getElementById('modal-date').textContent = item.date;
   document.getElementById('modal-type').textContent = item.type;
   document.getElementById('modal-category').textContent = item.category;
   document.getElementById('modal-amount').textContent = `${item.amount.toLocaleString()} 円`;
   document.getElementById('modal-memo').textContent = item.memo || '（なし）';
+  
   detailModal.classList.add('active');
 }
 
@@ -413,24 +357,48 @@ function closeModal() {
 modalCloseBtn.onclick = closeModal;
 detailModal.onclick = (e) => { if (e.target === detailModal) closeModal(); };
 
+// モーダル内「編集する」ボタン
 document.getElementById('modal-edit-btn').onclick = () => {
-  if (!selectedRecordForModal) return;
+  modalViewMode.classList.add('hidden');
+  modalEditMode.classList.remove('hidden');
+  modalTitle.textContent = '記録の編集';
+
   const item = selectedRecordForModal;
+  document.getElementById('modal-edit-date').value = item.date;
+  document.getElementById('modal-edit-type').value = item.type;
   
-  document.getElementById('date').value = item.date;
-  document.getElementById('record-type').value = item.type;
-  updateCategorySelect();
-  document.getElementById('category').value = item.category;
-  document.getElementById('amount').value = item.amount;
-  document.getElementById('memo').value = item.memo;
+  updateModalEditCategorySelect(item.type);
+  document.getElementById('modal-edit-category').value = item.category;
   
-  currentEditId = item.id;
-  submitBtn.textContent = '記録を更新';
-  ['date','record-type','category','amount','memo'].forEach(id => document.getElementById(id).classList.add('edit-mode-input'));
-  submitBtn.classList.add('edit-mode-btn');
+  document.getElementById('modal-edit-amount').value = item.amount;
+  document.getElementById('modal-edit-memo').value = item.memo;
+};
+
+// モーダル内「キャンセル」ボタン
+document.getElementById('modal-cancel-btn').onclick = () => {
+  modalViewMode.classList.remove('hidden');
+  modalEditMode.classList.add('hidden');
+  modalTitle.textContent = '記録の詳細';
+};
+
+// モーダル内「更新する」ボタン
+document.getElementById('modal-save-btn').onclick = async () => {
+  if (!selectedRecordForModal) return;
+  const data = {
+    date: document.getElementById('modal-edit-date').value,
+    type: document.getElementById('modal-edit-type').value,
+    category: document.getElementById('modal-edit-category').value,
+    amount: parseInt(document.getElementById('modal-edit-amount').value, 10),
+    memo: document.getElementById('modal-edit-memo').value.trim()
+  };
   
-  closeModal();
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  // Firebaseのデータを更新
+  await updateDoc(doc(db, 'kakeibo_v2_records', selectedRecordForModal.id), data);
+  
+  // 更新が完了したら閲覧モードに戻す
+  modalViewMode.classList.remove('hidden');
+  modalEditMode.classList.add('hidden');
+  modalTitle.textContent = '記録の詳細';
 };
 
 document.getElementById('modal-delete-btn').onclick = async () => {
@@ -442,8 +410,6 @@ document.getElementById('modal-delete-btn').onclick = async () => {
   }
 };
 
-
-// --- 集計 ---
 let summaryChart = null;
 const summaryMonthInput = document.getElementById('summary-month');
 const chartTypeSelect = document.getElementById('chart-type');
@@ -485,7 +451,6 @@ function drawChart(labels, data) {
 summaryMonthInput.addEventListener('change', displaySummary);
 chartTypeSelect.addEventListener('change', displaySummary);
 
-// --- 初期化 ---
 document.addEventListener('DOMContentLoaded', () => {
   const d = new Date(); const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; const month = today.substring(0, 7);
   document.getElementById('date').value = today; summaryMonthInput.value = month; recordMonthInput.value = month;
