@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-app.js";
-import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, writeBatch, query, where } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-firestore.js";
+import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, writeBatch, query, where, arrayUnion, or } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-firestore.js";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-auth.js";
 
 const firebaseConfig = {
@@ -26,10 +26,8 @@ let globalRecords = [];
 let unsubscribeBooks = null;
 let unsubscribeCategories = null;
 let unsubscribeRecords = null;
+let selectedRecordForModal = null; 
 
-// ==========================================
-// 画面切り替えのベース関数
-// ==========================================
 function showScreen(screenId) {
   document.querySelectorAll('.app-screen').forEach(s => s.classList.remove('active', 'hidden'));
   document.querySelectorAll('.app-screen').forEach(s => {
@@ -72,7 +70,7 @@ document.getElementById('login-form').onsubmit = async (e) => {
   try {
     await signInWithEmailAndPassword(auth, email, pass);
   } catch(error) {
-    alert("ログインに失敗しました。メールアドレスとパスワードを確認してください。");
+    alert("ログインに失敗しました。認証情報を確認してください。");
   }
 };
 
@@ -93,11 +91,19 @@ document.getElementById('logout-btn').onclick = () => {
 };
 
 // ==========================================
-// 2. マイページ（家計簿の作成・選択・名称編集）
+// 2. マイページ（家計簿一覧・作成・招待/共有参加）
 // ==========================================
 function subscribeToBooks() {
   if (!currentUser) return;
-  const q = query(collection(db, 'kakeibo_books'), where('uid', '==', currentUser.uid));
+  
+  // ★修正箇所：自分が作った古い家計簿（uid一致）と、新しく共有された家計簿（membersに含まれる）をOR条件で両方取得する
+  const q = query(
+    collection(db, 'kakeibo_books'), 
+    or(
+      where('uid', '==', currentUser.uid),
+      where('members', 'array-contains', currentUser.uid)
+    )
+  );
   
   unsubscribeBooks = onSnapshot(q, (snapshot) => {
     globalBooks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -107,7 +113,7 @@ function subscribeToBooks() {
     bookList.innerHTML = '';
     
     if (globalBooks.length === 0) {
-      bookList.innerHTML = '<li style="color:#666;">まだ家計簿がありません。上のフォームから作成してください。</li>';
+      bookList.innerHTML = '<li style="color:#666; padding:10px;">まだ家計簿がありません。</li>';
       return;
     }
 
@@ -120,30 +126,34 @@ function subscribeToBooks() {
           <span style="font-weight:bold;">${book.name}</span>
         </div>
         <div class="category-actions">
-          <button class="edit-btn" style="padding:4px 8px;">編集</button>
+          <button class="edit-btn invite-code-btn" style="padding:4px 8px; border-color:#d97736; color:#d97736;">招待コード</button>
+          <button class="edit-btn rename-btn" style="padding:4px 8px;">編集</button>
           <button class="delete-btn" style="padding:4px 8px;">削除</button>
         </div>
       `;
       
-      // カードクリックで家計簿を開く（ボタンクリック時は除外）
       li.onclick = (e) => {
         if (e.target.tagName === 'BUTTON') return; 
         openKakeibo(book.id, book.name);
       };
       
-      // 名称の変更機能を追加
-      li.querySelector('.edit-btn').onclick = async () => {
+      li.querySelector('.invite-code-btn').onclick = () => {
+        navigator.clipboard.writeText(book.id).then(() => {
+          alert(`招待コード（ID）をコピーしました！\nこのコードを家族のマイページ画面で入力してもらってください。\n\nコード: ${book.id}`);
+        }).catch(() => {
+          alert(`お使いのブラウザでは自動コピーできませんでした。手動でコピーしてください: ${book.id}`);
+        });
+      };
+      
+      li.querySelector('.rename-btn').onclick = async () => {
         const newName = prompt("新しい家計簿の名前を入力してください:", book.name);
         if (newName !== null && newName.trim() !== "") {
-          await updateDoc(doc(db, 'kakeibo_books', book.id), {
-            name: newName.trim()
-          });
+          await updateDoc(doc(db, 'kakeibo_books', book.id), { name: newName.trim() });
         }
       };
       
-      // 家計簿の削除
       li.querySelector('.delete-btn').onclick = async () => {
-        if (confirm(`「${book.name}」を削除しますか？\n※中の記録もすべて見えなくなります。`)) {
+        if (confirm(`「${book.name}」を削除しますか？\n※全メンバーのマイページから表示されなくなります。`)) {
           await deleteDoc(doc(db, 'kakeibo_books', book.id));
         }
       };
@@ -153,7 +163,6 @@ function subscribeToBooks() {
   });
 }
 
-// 家計簿の新規作成
 document.getElementById('create-book-form').onsubmit = async (e) => {
   e.preventDefault();
   const nameInput = document.getElementById('new-book-name');
@@ -162,13 +171,30 @@ document.getElementById('create-book-form').onsubmit = async (e) => {
     await addDoc(collection(db, 'kakeibo_books'), {
       name: name,
       uid: currentUser.uid,
+      members: [currentUser.uid], 
       createdAt: Date.now()
     });
     nameInput.value = '';
   }
 };
 
-// 家計簿を開く処理
+document.getElementById('join-book-form').onsubmit = async (e) => {
+  e.preventDefault();
+  const idInput = document.getElementById('join-book-id');
+  const bookId = idInput.value.trim();
+  if (bookId) {
+    try {
+      await updateDoc(doc(db, 'kakeibo_books', bookId), {
+        members: arrayUnion(currentUser.uid)
+      });
+      alert("共有家計簿に参加しました！一覧を確認してください。");
+      idInput.value = '';
+    } catch (err) {
+      alert("参加に失敗しました。コードが正しいか確認してください。");
+    }
+  }
+};
+
 function openKakeibo(bookId, bookName) {
   currentBookId = bookId;
   document.getElementById('current-book-name-display').textContent = `開いている家計簿：${bookName}`;
@@ -176,7 +202,6 @@ function openKakeibo(bookId, bookName) {
   subscribeToKakeiboData(); 
 }
 
-// マイページに戻る
 document.getElementById('back-to-mypage-btn').onclick = () => {
   currentBookId = null;
   if (unsubscribeCategories) unsubscribeCategories();
@@ -191,8 +216,8 @@ document.getElementById('back-to-mypage-btn').onclick = () => {
 function subscribeToKakeiboData() {
   if (!currentUser || !currentBookId) return;
 
-  const catQuery = query(collection(db, 'kakeibo_v2_categories'), where('uid', '==', currentUser.uid), where('bookId', '==', currentBookId));
-  const recQuery = query(collection(db, 'kakeibo_v2_records'), where('uid', '==', currentUser.uid), where('bookId', '==', currentBookId));
+  const catQuery = query(collection(db, 'kakeibo_v2_categories'), where('bookId', '==', currentBookId));
+  const recQuery = query(collection(db, 'kakeibo_v2_records'), where('bookId', '==', currentBookId));
 
   unsubscribeCategories = onSnapshot(catQuery, (snapshot) => {
     globalCategories = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -209,12 +234,21 @@ function subscribeToKakeiboData() {
     globalRecords = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     displayRecords();
     displaySummary();
+    
+    if (selectedRecordForModal) {
+      const updated = globalRecords.find(r => r.id === selectedRecordForModal.id);
+      if (updated) {
+        openModal(updated);
+      } else {
+        closeModal();
+      }
+    }
   });
 }
 
 
 // ==========================================
-// 4. 家計簿アプリの画面操作・ロジック
+// 4. アプリのUI操作・表示制御
 // ==========================================
 const navRecord = document.getElementById('nav-record');
 const navSummary = document.getElementById('nav-summary');
@@ -339,20 +373,74 @@ function displayRecords() {
   displayData.sort((a, b) => new Date(b.date) - new Date(a.date));
 
   displayData.forEach(item => {
-    const li = document.createElement('li'); const typeClass = item.type === '固定費' ? 'type-fixed' : 'type-variable';
-    li.innerHTML = `<div class="record-info"><span>${item.date} <span class="type-label ${typeClass}">${item.type}</span>【${item.category}】</span>${item.memo ? `<span class="record-memo">${item.memo}</span>` : ''}</div><div class="record-actions"><span class="record-amount">${item.amount.toLocaleString()}円</span><div class="action-buttons"><button class="edit-btn">編集</button><button class="delete-btn">削除</button></div></div>`;
+    const li = document.createElement('li');
+    const displayDate = item.date.substring(5); 
     
-    li.querySelector('.edit-btn').onclick = () => {
-      document.getElementById('date').value = item.date; document.getElementById('record-type').value = item.type; updateCategorySelect(); document.getElementById('category').value = item.category; document.getElementById('amount').value = item.amount; document.getElementById('memo').value = item.memo;
-      currentEditId = item.id; submitBtn.textContent = '記録を更新';
-      ['date','record-type','category','amount','memo'].forEach(id => document.getElementById(id).classList.add('edit-mode-input')); submitBtn.classList.add('edit-mode-btn');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    };
-    li.querySelector('.delete-btn').onclick = async () => { if (confirm('この記録を削除しますか？')) await deleteDoc(doc(db, 'kakeibo_v2_records', item.id)); };
+    li.innerHTML = `
+      <div class="record-minimal-left">
+        <span class="record-minimal-date">${displayDate}</span>
+        <span class="record-minimal-cat">【${item.category}】${item.memo ? item.memo : ''}</span>
+      </div>
+      <span class="record-minimal-amount">${item.amount.toLocaleString()}円</span>
+    `;
+    
+    li.onclick = () => openModal(item);
     recordList.appendChild(li);
   });
 }
 recordMonthInput.addEventListener('change', displayRecords);
+
+
+// --- モーダルの開閉・操作処理 ---
+const detailModal = document.getElementById('detail-modal');
+const modalCloseBtn = document.getElementById('modal-close-btn');
+
+function openModal(item) {
+  selectedRecordForModal = item;
+  document.getElementById('modal-date').textContent = item.date;
+  document.getElementById('modal-type').textContent = item.type;
+  document.getElementById('modal-category').textContent = item.category;
+  document.getElementById('modal-amount').textContent = `${item.amount.toLocaleString()} 円`;
+  document.getElementById('modal-memo').textContent = item.memo || '（なし）';
+  detailModal.classList.add('active');
+}
+
+function closeModal() {
+  detailModal.classList.remove('active');
+  selectedRecordForModal = null;
+}
+
+modalCloseBtn.onclick = closeModal;
+detailModal.onclick = (e) => { if (e.target === detailModal) closeModal(); };
+
+document.getElementById('modal-edit-btn').onclick = () => {
+  if (!selectedRecordForModal) return;
+  const item = selectedRecordForModal;
+  
+  document.getElementById('date').value = item.date;
+  document.getElementById('record-type').value = item.type;
+  updateCategorySelect();
+  document.getElementById('category').value = item.category;
+  document.getElementById('amount').value = item.amount;
+  document.getElementById('memo').value = item.memo;
+  
+  currentEditId = item.id;
+  submitBtn.textContent = '記録を更新';
+  ['date','record-type','category','amount','memo'].forEach(id => document.getElementById(id).classList.add('edit-mode-input'));
+  submitBtn.classList.add('edit-mode-btn');
+  
+  closeModal();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+
+document.getElementById('modal-delete-btn').onclick = async () => {
+  if (!selectedRecordForModal) return;
+  if (confirm('この記録を削除しますか？')) {
+    const idToDelete = selectedRecordForModal.id;
+    closeModal();
+    await deleteDoc(doc(db, 'kakeibo_v2_records', idToDelete));
+  }
+};
 
 
 // --- 集計 ---
