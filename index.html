@@ -4,16 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>シンプル家計簿</title>
-
-  <link rel="icon" href="icon.png">
-  
-  <link rel="apple-touch-icon" href="icon.png">
-  
-  <meta name="apple-mobile-web-app-title" content="家計簿">
-  
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
-
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -69,18 +59,27 @@
         <button id="logout-btn" class="edit-btn">ログアウト</button>
       </div>
 
-      <div class="settings-block">
-        <h4>新しい家計簿を作る</h4>
-        <form id="create-book-form" style="display: flex; gap: 10px;">
-          <input type="text" id="new-book-name" placeholder="例：家庭用、自分用、旅行用など" required style="flex: 1;">
-          <button type="submit" class="action-btn" style="width: auto; margin-top: 0; padding: 10px 20px;">作成</button>
-        </form>
+      <div class="settings-block-split" style="display: flex; gap: 20px;">
+        <div style="flex: 1;">
+          <h4>新しい家計簿を作る</h4>
+          <form id="create-book-form" style="display: flex; gap: 8px;">
+            <input type="text" id="new-book-name" placeholder="例：家庭用、自分用" required style="flex: 1;">
+            <button type="submit" class="action-btn" style="width: auto; margin-top: 0; padding: 10px 15px;">作成</button>
+          </form>
+        </div>
+        
+        <div style="flex: 1;">
+          <h4>共有された家計簿に参加</h4>
+          <form id="join-book-form" style="display: flex; gap: 8px;">
+            <input type="text" id="join-book-id" placeholder="招待コードを入力" required style="flex: 1; font-family: 'Space Mono';">
+            <button type="submit" class="action-btn" style="width: auto; margin-top: 0; padding: 10px 15px; background: #333; color: #fff;">参加</button>
+          </form>
+        </div>
       </div>
 
       <div class="settings-block" style="margin-top: 30px;">
         <h4>あなたの家計簿一覧</h4>
-        <ul id="book-list">
-          </ul>
+        <ul id="book-list"></ul>
       </div>
     </div>
   </div>
@@ -195,6 +194,26 @@
           </div>
         </div>
       </section>
+    </div>
+  </div>
+
+  <div id="detail-modal" class="modal-overlay">
+    <div class="modal-content">
+      <span id="modal-close-btn" class="modal-close-btn">&times;</span>
+      <h3>記録の詳細</h3>
+      <div class="modal-body">
+        <table>
+          <tr><th>日付</th><td id="modal-date"></td></tr>
+          <tr><th>分類</th><td id="modal-type"></td></tr>
+          <tr><th>カテゴリ</th><td id="modal-category"></td></tr>
+          <tr><th>金額</th><td id="modal-amount" style="font-weight:bold;"></td></tr>
+          <tr><th>メモ</th><td id="modal-memo"></td></tr>
+        </table>
+      </div>
+      <div style="display: flex; gap: 10px;">
+        <button id="modal-edit-btn" class="action-btn" style="margin-top:0; flex:1;">編集</button>
+        <button id="modal-delete-btn" class="action-btn" style="margin-top:0; flex:1; border-color:#ff4d4d; color:#ff4d4d;">削除</button>
+      </div>
     </div>
   </div>
 
