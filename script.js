@@ -27,6 +27,21 @@ let unsubscribeCategories = null;
 let unsubscribeRecords = null;
 let selectedRecordForModal = null; 
 
+// ★追加：トースト通知を表示する関数
+function showToast(message) {
+  const container = document.getElementById('toast-container');
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.textContent = message;
+  container.appendChild(toast);
+  
+  // 2.5秒後にフェードアウトを開始し、終わったらDOMから削除
+  setTimeout(() => {
+    toast.classList.add('fade-out');
+    setTimeout(() => toast.remove(), 300);
+  }, 2500);
+}
+
 function showScreen(screenId) {
   document.querySelectorAll('.app-screen').forEach(s => s.classList.remove('active', 'hidden'));
   document.querySelectorAll('.app-screen').forEach(s => {
@@ -35,6 +50,9 @@ function showScreen(screenId) {
   });
 }
 
+// ==========================================
+// 1. 認証
+// ==========================================
 onAuthStateChanged(auth, (user) => {
   if (user) {
     currentUser = user;
@@ -67,6 +85,9 @@ document.getElementById('register-form').onsubmit = async (e) => {
 
 document.getElementById('logout-btn').onclick = () => { if(confirm("ログアウトしますか？")) signOut(auth); };
 
+// ==========================================
+// 2. マイページ（一覧・作成・参加）
+// ==========================================
 function subscribeToBooks() {
   if (!currentUser) return;
   const q = query(collection(db, 'kakeibo_books'), or(where('uid', '==', currentUser.uid), where('members', 'array-contains', currentUser.uid)));
@@ -79,7 +100,7 @@ function subscribeToBooks() {
     bookList.innerHTML = '';
     
     if (globalBooks.length === 0) {
-      bookList.innerHTML = '<li style="color:#666; padding:10px;">まだ家計簿がありません。</li>';
+      bookList.innerHTML = '<li class="empty-list-msg">まだ家計簿がありません。</li>';
       return;
     }
 
@@ -87,22 +108,24 @@ function subscribeToBooks() {
       const li = document.createElement('li');
       li.className = 'category-card book-card';
       
-      // ★変更：3段レイアウト構築用のHTML構造
       li.innerHTML = `
         <div class="book-info">
-          <span style="font-size:20px; margin-right:8px;">📘</span>
+          <span class="book-icon">📘</span>
           <span>${book.name}</span>
         </div>
+        <div class="book-actions-group main-action">
+          <button class="edit-btn open-book-btn">この家計簿を開く</button>
+        </div>
         <div class="book-actions-group primary">
-          <button class="edit-btn rename-btn">編集</button>
+          <button class="edit-btn rename-btn">名前変更</button>
           <button class="delete-btn">削除</button>
         </div>
         <div class="book-actions-group secondary">
-          <button class="edit-btn invite-code-btn" style="border-color:#d97736; color:#d97736;">招待コード</button>
+          <button class="edit-btn invite-code-btn btn-orange-outline">招待コードをコピー</button>
         </div>
       `;
       
-      li.onclick = (e) => { if (e.target.tagName === 'BUTTON') return; openKakeibo(book.id, book.name); };
+      li.querySelector('.open-book-btn').onclick = () => openKakeibo(book.id, book.name);
       
       li.querySelector('.invite-code-btn').onclick = () => {
         navigator.clipboard.writeText(book.id).then(() => { alert(`招待コード（ID）をコピーしました！\nこのコードを家族のマイページ画面で入力してもらってください。\n\nコード: ${book.id}`); })
@@ -129,6 +152,7 @@ document.getElementById('create-book-form').onsubmit = async (e) => {
   if (nameInput.value.trim()) {
     await addDoc(collection(db, 'kakeibo_books'), { name: nameInput.value.trim(), uid: currentUser.uid, members: [currentUser.uid], createdAt: Date.now() });
     nameInput.value = '';
+    showToast('家計簿を作成しました');
   }
 };
 
@@ -138,7 +162,7 @@ document.getElementById('join-book-form').onsubmit = async (e) => {
   if (idInput.value.trim()) {
     try {
       await updateDoc(doc(db, 'kakeibo_books', idInput.value.trim()), { members: arrayUnion(currentUser.uid) });
-      alert("共有家計簿に参加しました！一覧を確認してください。"); idInput.value = '';
+      showToast('共有家計簿に参加しました！'); idInput.value = '';
     } catch (err) { alert("参加に失敗しました。コードが正しいか確認してください。"); }
   }
 };
@@ -157,6 +181,9 @@ document.getElementById('back-to-mypage-btn').onclick = () => {
   showScreen('screen-mypage');
 };
 
+// ==========================================
+// 3. データ同期
+// ==========================================
 function subscribeToKakeiboData() {
   if (!currentUser || !currentBookId) return;
 
@@ -170,18 +197,16 @@ function subscribeToKakeiboData() {
     displayCategories(); updateCategorySelect();
   });
 
-  // ★リアルタイム更新（パートナーが編集したときにも即時反映）
   unsubscribeRecords = onSnapshot(recQuery, (snapshot) => {
     globalRecords = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     displayRecords();
     displaySummary();
     
-    // モーダル表示中に裏側でデータが更新・削除された場合の安全な同期
+    // 詳細モーダルが開いている場合のリアルタイム更新
     if (selectedRecordForModal) {
       const updated = globalRecords.find(r => r.id === selectedRecordForModal.id);
       if (updated) {
         selectedRecordForModal = updated;
-        // もし閲覧モードで開いているなら、最新のテキストに書き換える
         if (!document.getElementById('modal-view-mode').classList.contains('hidden')) {
           document.getElementById('modal-date').textContent = updated.date;
           document.getElementById('modal-type').textContent = updated.type;
@@ -193,9 +218,22 @@ function subscribeToKakeiboData() {
         closeModal();
       }
     }
+
+    // 日付別モーダルが開いている場合のリアルタイム更新
+    if (currentDailyDate) {
+      const currentItems = globalRecords.filter(r => r.date === currentDailyDate);
+      if (currentItems.length > 0) {
+        renderDailyRecordList(currentItems);
+      } else {
+        closeDailyModal(); // その日の記録が全て消えたらモーダルを閉じる
+      }
+    }
   });
 }
 
+// ==========================================
+// 4. UI操作・表示制御
+// ==========================================
 const navRecord = document.getElementById('nav-record'), navSummary = document.getElementById('nav-summary'), navSettings = document.getElementById('nav-settings');
 const viewRecord = document.getElementById('view-record'), viewSummary = document.getElementById('view-summary'), viewSettings = document.getElementById('view-settings');
 
@@ -209,7 +247,7 @@ navRecord.onclick = () => switchView(viewRecord, navRecord);
 navSummary.onclick = () => switchView(viewSummary, navSummary);
 navSettings.onclick = () => switchView(viewSettings, navSettings);
 
-
+// --- カテゴリ管理 ---
 let currentCategoryEditId = null;
 const categoryForm = document.getElementById('category-form'), recordTypeSelect = document.getElementById('record-type');
 const categorySelect = document.getElementById('category'), categorySubmitBtn = document.getElementById('category-submit-btn');
@@ -246,6 +284,7 @@ function displayCategories() {
     li.querySelector('.delete-btn').onclick = async () => {
       if (confirm(`カテゴリ「${cat.name}」を削除しますか？`)) {
         await deleteDoc(doc(db, 'kakeibo_v2_categories', cat.id));
+        showToast('カテゴリを削除しました');
         if (currentCategoryEditId === cat.id) { currentCategoryEditId = null; categorySubmitBtn.textContent = '追加'; document.getElementById('new-category').value = ''; document.getElementById('new-category').classList.remove('edit-mode-input'); categorySubmitBtn.classList.remove('edit-mode-btn'); }
       }
     };
@@ -265,14 +304,16 @@ categoryForm.addEventListener('submit', async (e) => {
       await batch.commit();
       currentCategoryEditId = null; categorySubmitBtn.textContent = '追加';
       document.getElementById('new-category').classList.remove('edit-mode-input'); categorySubmitBtn.classList.remove('edit-mode-btn');
+      showToast('カテゴリを更新しました');
     } else {
       await addDoc(collection(db, 'kakeibo_v2_categories'), { name, type, order: globalCategories.length, uid: currentUser.uid, bookId: currentBookId });
+      showToast('カテゴリを追加しました');
     }
     document.getElementById('new-category').value = '';
   }
 });
 
-// 新規記録フォーム
+// --- 支出記録（保存とリスト表示） ---
 const form = document.getElementById('kakeibo-form');
 const recordList = document.getElementById('record-list');
 const recordMonthInput = document.getElementById('record-month');
@@ -286,31 +327,99 @@ form.addEventListener('submit', async (e) => {
   };
   await addDoc(collection(db, 'kakeibo_v2_records'), data);
   document.getElementById('amount').value = ''; document.getElementById('memo').value = '';
+  
+  // ★追加：保存完了のトースト通知
+  showToast('記録しました！');
 });
 
+// ★修正：記録一覧を「日付ごとのグループ」にまとめる処理
 function displayRecords() {
   recordList.innerHTML = '';
   const month = recordMonthInput.value;
   let displayData = globalRecords.filter(r => !month || r.date.startsWith(month));
   displayData.sort((a, b) => new Date(b.date) - new Date(a.date));
 
+  // 日付ごとにデータをまとめる（グルーピング）
+  const grouped = {};
   displayData.forEach(item => {
+    if (!grouped[item.date]) grouped[item.date] = [];
+    grouped[item.date].push(item);
+  });
+
+  // まとめたデータを一覧に表示する
+  Object.keys(grouped).forEach(dateStr => {
+    const items = grouped[dateStr];
+    // その日の合計金額を計算
+    const dailyTotal = items.reduce((sum, record) => sum + record.amount, 0);
+    
+    // 日付を「○月○日」の形式に変換
+    const [y, m, d] = dateStr.split('-');
+    const displayDate = `${parseInt(m, 10)}月${parseInt(d, 10)}日`;
+
     const li = document.createElement('li');
+    li.className = 'record-group-item';
     li.innerHTML = `
-      <div class="record-minimal-left">
-        <span class="record-minimal-date">${item.date.substring(5)}</span>
-        <span class="record-minimal-cat">【${item.category}】${item.memo ? item.memo : ''}</span>
+      <div class="record-group-date">${displayDate}</div>
+      <div class="record-group-summary">
+        <span>${items.length}件</span>
+        <span class="record-group-total">¥${dailyTotal.toLocaleString()}</span>
       </div>
-      <span class="record-minimal-amount">${item.amount.toLocaleString()}円</span>
     `;
-    li.onclick = () => openModal(item);
+    
+    // タップすると、その日の記録を一覧表示するモーダルを開く
+    li.onclick = () => openDailyModal(dateStr, items);
+    
     recordList.appendChild(li);
   });
 }
 recordMonthInput.addEventListener('change', displayRecords);
 
+// ==========================================
+// 5. モーダル操作群
+// ==========================================
 
-// ★変更：モーダル内での編集機能の制御
+// --- 日付別モーダル ---
+const dailyModal = document.getElementById('daily-modal');
+const dailyModalCloseBtn = document.getElementById('daily-modal-close-btn');
+const dailyModalTitle = document.getElementById('daily-modal-title');
+const dailyRecordList = document.getElementById('daily-record-list');
+let currentDailyDate = null; // 現在開いている日付モーダルの日付を記憶
+
+function openDailyModal(dateStr, items) {
+  currentDailyDate = dateStr;
+  const [y, m, d] = dateStr.split('-');
+  dailyModalTitle.textContent = `${parseInt(m, 10)}月${parseInt(d, 10)}日の記録`;
+  
+  renderDailyRecordList(items);
+  dailyModal.classList.add('active');
+}
+
+function renderDailyRecordList(items) {
+  dailyRecordList.innerHTML = '';
+  items.forEach(item => {
+    const li = document.createElement('li');
+    li.innerHTML = `
+      <div class="record-minimal-left">
+        <span class="record-minimal-cat">【${item.category}】${item.memo ? item.memo : ''}</span>
+      </div>
+      <span class="record-minimal-amount">${item.amount.toLocaleString()}円</span>
+    `;
+    // 詳細モーダルを呼び出す
+    li.onclick = () => openModal(item);
+    dailyRecordList.appendChild(li);
+  });
+}
+
+function closeDailyModal() {
+  dailyModal.classList.remove('active');
+  currentDailyDate = null;
+}
+
+dailyModalCloseBtn.onclick = closeDailyModal;
+dailyModal.onclick = (e) => { if (e.target === dailyModal) closeDailyModal(); };
+
+
+// --- 詳細・編集モーダル ---
 const detailModal = document.getElementById('detail-modal');
 const modalCloseBtn = document.getElementById('modal-close-btn');
 const modalViewMode = document.getElementById('modal-view-mode');
@@ -334,12 +443,10 @@ document.getElementById('modal-edit-type').addEventListener('change', (e) => {
 function openModal(item) {
   selectedRecordForModal = item;
   
-  // モーダルを開くときは常に閲覧モードにする
   modalViewMode.classList.remove('hidden');
   modalEditMode.classList.add('hidden');
   modalTitle.textContent = '記録の詳細';
 
-  // 閲覧用のデータをセット
   document.getElementById('modal-date').textContent = item.date;
   document.getElementById('modal-type').textContent = item.type;
   document.getElementById('modal-category').textContent = item.category;
@@ -357,7 +464,6 @@ function closeModal() {
 modalCloseBtn.onclick = closeModal;
 detailModal.onclick = (e) => { if (e.target === detailModal) closeModal(); };
 
-// モーダル内「編集する」ボタン
 document.getElementById('modal-edit-btn').onclick = () => {
   modalViewMode.classList.add('hidden');
   modalEditMode.classList.remove('hidden');
@@ -374,14 +480,12 @@ document.getElementById('modal-edit-btn').onclick = () => {
   document.getElementById('modal-edit-memo').value = item.memo;
 };
 
-// モーダル内「キャンセル」ボタン
 document.getElementById('modal-cancel-btn').onclick = () => {
   modalViewMode.classList.remove('hidden');
   modalEditMode.classList.add('hidden');
   modalTitle.textContent = '記録の詳細';
 };
 
-// モーダル内「更新する」ボタン
 document.getElementById('modal-save-btn').onclick = async () => {
   if (!selectedRecordForModal) return;
   const data = {
@@ -392,10 +496,10 @@ document.getElementById('modal-save-btn').onclick = async () => {
     memo: document.getElementById('modal-edit-memo').value.trim()
   };
   
-  // Firebaseのデータを更新
   await updateDoc(doc(db, 'kakeibo_v2_records', selectedRecordForModal.id), data);
   
-  // 更新が完了したら閲覧モードに戻す
+  showToast('記録を更新しました');
+  
   modalViewMode.classList.remove('hidden');
   modalEditMode.classList.add('hidden');
   modalTitle.textContent = '記録の詳細';
@@ -407,9 +511,13 @@ document.getElementById('modal-delete-btn').onclick = async () => {
     const idToDelete = selectedRecordForModal.id;
     closeModal();
     await deleteDoc(doc(db, 'kakeibo_v2_records', idToDelete));
+    showToast('記録を削除しました');
   }
 };
 
+// ==========================================
+// 6. 集計・円グラフ
+// ==========================================
 let summaryChart = null;
 const summaryMonthInput = document.getElementById('summary-month');
 const chartTypeSelect = document.getElementById('chart-type');
@@ -435,7 +543,15 @@ function displaySummary() {
     const sorted = Object.entries(totals.cats).filter(([name]) => {
       const c = globalCategories.find(cat => cat.name === name);
       return type === 'all' || (type === 'fixed' && c?.type === '固定費') || (type === 'variable' && c?.type === '変動費');
-    }).sort((a, b) => b[1] - a[1]);
+    }).sort((a, b) => {
+      if (type === 'all') {
+        const catA = globalCategories.find(c => c.name === a[0])?.type || '';
+        const catB = globalCategories.find(c => c.name === b[0])?.type || '';
+        if (catA !== catB) return catA === '固定費' ? -1 : 1; 
+      }
+      return b[1] - a[1]; 
+    });
+    
     labels = sorted.map(s => s[0]); data = sorted.map(s => s[1]);
   }
 
@@ -446,11 +562,14 @@ function displaySummary() {
 function drawChart(labels, data) {
   const ctx = document.getElementById('category-chart').getContext('2d');
   if (summaryChart) summaryChart.destroy();
-  summaryChart = new Chart(ctx, { type: 'doughnut', data: { labels, datasets: [{ data, backgroundColor: ['#E07A5F', '#3D405B', '#81B29A', '#F2CC8F', '#E8A598', '#6F7C85', '#A2D2FF', '#FFB703', '#219EBC'], borderWidth: 2, borderColor: '#ffffff' }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } } });
+  summaryChart = new Chart(ctx, { type: 'doughnut', data: { labels, datasets: [{ data, backgroundColor: ['#3D405B', '#575A7B', '#71759B', '#E07A5F', '#E8937E', '#F1AC9D', '#81B29A', '#F2CC8F', '#6F7C85'], borderWidth: 2, borderColor: '#ffffff' }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } } });
 }
 summaryMonthInput.addEventListener('change', displaySummary);
 chartTypeSelect.addEventListener('change', displaySummary);
 
+// ==========================================
+// 7. アプリ初期化
+// ==========================================
 document.addEventListener('DOMContentLoaded', () => {
   const d = new Date(); const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; const month = today.substring(0, 7);
   document.getElementById('date').value = today; summaryMonthInput.value = month; recordMonthInput.value = month;
