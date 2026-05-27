@@ -307,11 +307,28 @@ nav button.active {
   margin-top: 20px;
 }
 
+/* ★修正：一番下に配置されるため、上に余白と区切り線を設定 */
+.profile-setting-block {
+  margin-top: 40px;
+  padding-top: 20px;
+  border-top: 1px dashed #cccccc;
+}
+
+.helper-text {
+  font-size: 12px;
+  color: #666666;
+  margin-top: 5px;
+}
+
 .kakeibo-header-bar {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 15px;
+}
+
+.header-right-block {
+  text-align: right;
 }
 
 .current-book-badge {
@@ -320,6 +337,13 @@ nav button.active {
   padding: 4px 10px;
   border-radius: 4px;
   font-size: 14px;
+  display: inline-block;
+}
+
+.header-members-text {
+  font-size: 11px;
+  color: #666666;
+  margin-top: 6px;
 }
 
 #category-form {
@@ -381,7 +405,6 @@ nav button.active {
   font-size: 14px;
 }
 
-/* ★追加・修正：支出記録のリスト（日付でグループ化） */
 #record-list {
   background-color: #ffffff;
   border: 1px solid #cccccc;
@@ -427,7 +450,6 @@ nav button.active {
   color: #333333;
 }
 
-/* 日付別モーダルの中のリスト */
 .daily-record-list {
   margin-top: 15px;
   max-height: 50vh;
@@ -493,16 +515,25 @@ nav button.active {
   transition: background-color 0.2s;
 }
 
-.book-card:hover { background-color: #f9f9f9; }
+.book-card:hover {
+  background-color: #f9f9f9;
+}
 
-.book-info {
+.book-info-col {
   flex: 1;
   min-width: 150px;
   display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-bottom: 10px;
+}
+
+.book-title-row {
+  display: flex;
   align-items: center;
+  margin-bottom: 4px;
   font-weight: bold;
   font-size: 16px;
-  margin-bottom: 10px;
 }
 
 .book-icon {
@@ -694,7 +725,6 @@ nav button.active {
   flex: 1;
 }
 
-/* 重なりの制御：詳細モーダルは日付モーダルより手前に表示する */
 #detail-modal {
   z-index: 1010;
 }
@@ -704,7 +734,7 @@ nav button.active {
    ========================================== */
 .toast-container {
   position: fixed;
-  top: 30px; /* 画面上部に表示 */
+  top: 30px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 2000;
@@ -740,21 +770,9 @@ nav button.active {
    9. Media Queries (レスポンシブ対応)
    ========================================== */
 @media (min-width: 600px) {
-  .record-layout {
-    display: flex;
-    gap: 60px;
-    align-items: flex-start;
-  }
-  
-  .form-area {
-    flex: 1;
-    position: sticky;
-    top: 20px;
-  }
-  
-  .list-area {
-    flex: 2;
-  }
+  .record-layout { display: flex; gap: 60px; align-items: flex-start; }
+  .form-area { flex: 1; position: sticky; top: 20px; }
+  .list-area { flex: 2; }
 }
 
 @media (max-width: 600px) {
@@ -775,10 +793,8 @@ nav button.active {
     gap: 8px;
   }
   
-  .book-info {
-    justify-content: center;
-    margin-bottom: 5px;
-    font-size: 18px;
+  .book-info-col {
+    align-items: center;
   }
   
   .book-actions-group {
