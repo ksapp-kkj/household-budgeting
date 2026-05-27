@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-app.js";
 import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, writeBatch, query, where, arrayUnion, or } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-firestore.js";
-import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-auth.js";
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-auth.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyAyBFPe2br0E_Nubc1ZYMGoTMh09vEKVCw",
@@ -27,7 +27,6 @@ let unsubscribeCategories = null;
 let unsubscribeRecords = null;
 let selectedRecordForModal = null; 
 
-// ★追加：トースト通知を表示する関数
 function showToast(message) {
   const container = document.getElementById('toast-container');
   const toast = document.createElement('div');
@@ -35,7 +34,6 @@ function showToast(message) {
   toast.textContent = message;
   container.appendChild(toast);
   
-  // 2.5秒後にフェードアウトを開始し、終わったらDOMから削除
   setTimeout(() => {
     toast.classList.add('fade-out');
     setTimeout(() => toast.remove(), 300);
@@ -56,6 +54,7 @@ function showScreen(screenId) {
 onAuthStateChanged(auth, (user) => {
   if (user) {
     currentUser = user;
+    document.getElementById('nickname-input').value = currentUser.displayName || '';
     showScreen('screen-mypage');
     subscribeToBooks(); 
   } else {
@@ -86,8 +85,33 @@ document.getElementById('register-form').onsubmit = async (e) => {
 document.getElementById('logout-btn').onclick = () => { if(confirm("ログアウトしますか？")) signOut(auth); };
 
 // ==========================================
-// 2. マイページ（一覧・作成・参加）
+// 2. マイページ（一覧・作成・参加・プロフィール設定）
 // ==========================================
+
+document.getElementById('profile-form').onsubmit = async (e) => {
+  e.preventDefault();
+  const newName = document.getElementById('nickname-input').value.trim();
+  if (!newName) return;
+  
+  try {
+    await updateProfile(currentUser, { displayName: newName });
+    
+    if (globalBooks.length > 0) {
+      const batch = writeBatch(db);
+      globalBooks.forEach(book => {
+        const docRef = doc(db, 'kakeibo_books', book.id);
+        batch.update(docRef, {
+          [`memberNames.${currentUser.uid}`]: newName
+        });
+      });
+      await batch.commit();
+    }
+    showToast('ニックネームを保存しました');
+  } catch (error) {
+    alert("更新に失敗しました: " + error.message);
+  }
+};
+
 function subscribeToBooks() {
   if (!currentUser) return;
   const q = query(collection(db, 'kakeibo_books'), or(where('uid', '==', currentUser.uid), where('members', 'array-contains', currentUser.uid)));
@@ -104,14 +128,27 @@ function subscribeToBooks() {
       return;
     }
 
+    if (currentBookId) {
+      const currentBook = globalBooks.find(b => b.id === currentBookId);
+      if (currentBook) {
+        let currentMemberText = '';
+        if (currentBook.memberNames) currentMemberText = Object.values(currentBook.memberNames).join(' , ');
+        else if (currentBook.memberEmails) currentMemberText = currentBook.memberEmails.join(' , ');
+        document.getElementById('current-book-members-display').textContent = `👥 参加者: ${currentMemberText}`;
+      }
+    }
+
     globalBooks.forEach(book => {
       const li = document.createElement('li');
       li.className = 'category-card book-card';
-      
+
+      // ★修正：参加者一覧は表示せず、アイコンと家計簿名のみシンプルに表示
       li.innerHTML = `
-        <div class="book-info">
-          <span class="book-icon">📘</span>
-          <span>${book.name}</span>
+        <div class="book-info-col">
+          <div class="book-title-row">
+            <span class="book-icon">📘</span>
+            <span>${book.name}</span>
+          </div>
         </div>
         <div class="book-actions-group main-action">
           <button class="edit-btn open-book-btn">この家計簿を開く</button>
@@ -150,7 +187,15 @@ document.getElementById('create-book-form').onsubmit = async (e) => {
   e.preventDefault();
   const nameInput = document.getElementById('new-book-name');
   if (nameInput.value.trim()) {
-    await addDoc(collection(db, 'kakeibo_books'), { name: nameInput.value.trim(), uid: currentUser.uid, members: [currentUser.uid], createdAt: Date.now() });
+    const displayName = currentUser.displayName || currentUser.email.split('@')[0];
+    await addDoc(collection(db, 'kakeibo_books'), { 
+      name: nameInput.value.trim(), 
+      uid: currentUser.uid, 
+      members: [currentUser.uid],
+      memberEmails: [currentUser.email], 
+      memberNames: { [currentUser.uid]: displayName },
+      createdAt: Date.now() 
+    });
     nameInput.value = '';
     showToast('家計簿を作成しました');
   }
@@ -161,15 +206,31 @@ document.getElementById('join-book-form').onsubmit = async (e) => {
   const idInput = document.getElementById('join-book-id');
   if (idInput.value.trim()) {
     try {
-      await updateDoc(doc(db, 'kakeibo_books', idInput.value.trim()), { members: arrayUnion(currentUser.uid) });
-      showToast('共有家計簿に参加しました！'); idInput.value = '';
-    } catch (err) { alert("参加に失敗しました。コードが正しいか確認してください。"); }
+      const displayName = currentUser.displayName || currentUser.email.split('@')[0];
+      await updateDoc(doc(db, 'kakeibo_books', idInput.value.trim()), { 
+        members: arrayUnion(currentUser.uid),
+        memberEmails: arrayUnion(currentUser.email),
+        [`memberNames.${currentUser.uid}`]: displayName
+      });
+      showToast('共有家計簿に参加しました！'); 
+      idInput.value = '';
+    } catch (err) { 
+      alert("参加に失敗しました。コードが正しいか、ルール設定が更新されているか確認してください。"); 
+    }
   }
 };
 
 function openKakeibo(bookId, bookName) {
   currentBookId = bookId;
+  const book = globalBooks.find(b => b.id === bookId);
+  
+  let memberText = '';
+  if (book && book.memberNames) memberText = Object.values(book.memberNames).join(' , ');
+  else if (book && book.memberEmails) memberText = book.memberEmails.join(' , ');
+
   document.getElementById('current-book-name-display').textContent = `開いている家計簿：${bookName}`;
+  document.getElementById('current-book-members-display').textContent = `👥 参加者: ${memberText}`;
+  
   showScreen('screen-kakeibo');
   subscribeToKakeiboData(); 
 }
@@ -202,7 +263,6 @@ function subscribeToKakeiboData() {
     displayRecords();
     displaySummary();
     
-    // 詳細モーダルが開いている場合のリアルタイム更新
     if (selectedRecordForModal) {
       const updated = globalRecords.find(r => r.id === selectedRecordForModal.id);
       if (updated) {
@@ -219,13 +279,12 @@ function subscribeToKakeiboData() {
       }
     }
 
-    // 日付別モーダルが開いている場合のリアルタイム更新
     if (currentDailyDate) {
       const currentItems = globalRecords.filter(r => r.date === currentDailyDate);
       if (currentItems.length > 0) {
         renderDailyRecordList(currentItems);
       } else {
-        closeDailyModal(); // その日の記録が全て消えたらモーダルを閉じる
+        closeDailyModal();
       }
     }
   });
@@ -328,31 +387,25 @@ form.addEventListener('submit', async (e) => {
   await addDoc(collection(db, 'kakeibo_v2_records'), data);
   document.getElementById('amount').value = ''; document.getElementById('memo').value = '';
   
-  // ★追加：保存完了のトースト通知
   showToast('記録しました！');
 });
 
-// ★修正：記録一覧を「日付ごとのグループ」にまとめる処理
 function displayRecords() {
   recordList.innerHTML = '';
   const month = recordMonthInput.value;
   let displayData = globalRecords.filter(r => !month || r.date.startsWith(month));
   displayData.sort((a, b) => new Date(b.date) - new Date(a.date));
 
-  // 日付ごとにデータをまとめる（グルーピング）
   const grouped = {};
   displayData.forEach(item => {
     if (!grouped[item.date]) grouped[item.date] = [];
     grouped[item.date].push(item);
   });
 
-  // まとめたデータを一覧に表示する
   Object.keys(grouped).forEach(dateStr => {
     const items = grouped[dateStr];
-    // その日の合計金額を計算
     const dailyTotal = items.reduce((sum, record) => sum + record.amount, 0);
     
-    // 日付を「○月○日」の形式に変換
     const [y, m, d] = dateStr.split('-');
     const displayDate = `${parseInt(m, 10)}月${parseInt(d, 10)}日`;
 
@@ -366,9 +419,7 @@ function displayRecords() {
       </div>
     `;
     
-    // タップすると、その日の記録を一覧表示するモーダルを開く
     li.onclick = () => openDailyModal(dateStr, items);
-    
     recordList.appendChild(li);
   });
 }
@@ -383,7 +434,7 @@ const dailyModal = document.getElementById('daily-modal');
 const dailyModalCloseBtn = document.getElementById('daily-modal-close-btn');
 const dailyModalTitle = document.getElementById('daily-modal-title');
 const dailyRecordList = document.getElementById('daily-record-list');
-let currentDailyDate = null; // 現在開いている日付モーダルの日付を記憶
+let currentDailyDate = null; 
 
 function openDailyModal(dateStr, items) {
   currentDailyDate = dateStr;
@@ -404,7 +455,6 @@ function renderDailyRecordList(items) {
       </div>
       <span class="record-minimal-amount">${item.amount.toLocaleString()}円</span>
     `;
-    // 詳細モーダルを呼び出す
     li.onclick = () => openModal(item);
     dailyRecordList.appendChild(li);
   });
