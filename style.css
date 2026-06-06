@@ -264,7 +264,7 @@ button {
 nav {
   display: flex;
   gap: 5px;
-  margin-bottom: 25px;
+  margin-bottom: 20px; /* 余白を少し調整 */
 }
 
 nav button {
@@ -283,6 +283,50 @@ nav button.active {
   color: #ffffff;
   border-color: #333333;
   font-weight: bold;
+}
+
+/* ★追加：共通の月めくりUIスタイル */
+.month-selector-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 15px;
+  margin-bottom: 25px;
+  background-color: #f9f9f9;
+  padding: 10px;
+  border-radius: 6px;
+  border: 1px dashed #cccccc;
+}
+
+.month-nav-btn {
+  background: none;
+  border: none;
+  font-size: 20px;
+  color: #666666;
+  padding: 5px 15px;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.month-nav-btn:hover {
+  color: #d97736;
+}
+
+.month-input-center {
+  border: none;
+  background: transparent;
+  font-size: 18px;
+  font-weight: bold;
+  text-align: center;
+  width: 140px;
+  padding: 0;
+  color: #333333;
+}
+
+.month-input-center:focus {
+  outline: none;
+  background: transparent;
+  border-color: transparent;
 }
 
 /* ==========================================
@@ -307,7 +351,6 @@ nav button.active {
   margin-top: 20px;
 }
 
-/* ★修正：一番下に配置されるため、上に余白と区切り線を設定 */
 .profile-setting-block {
   margin-top: 40px;
   padding-top: 20px;
@@ -397,12 +440,6 @@ nav button.active {
   margin: 0;
   border: none;
   padding: 0;
-}
-
-.list-header input[type="month"] {
-  width: auto;
-  padding: 5px 10px;
-  font-size: 14px;
 }
 
 #record-list {
@@ -602,12 +639,6 @@ nav button.active {
   border-bottom: none;
   margin: 0;
   padding: 0;
-}
-
-.summary-header input[type="month"] {
-  width: auto;
-  padding: 5px 10px;
-  font-size: 14px;
 }
 
 .chart-container {
