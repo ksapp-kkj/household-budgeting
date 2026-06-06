@@ -1,5 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-app.js";
-import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, writeBatch, query, where, arrayUnion, or } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-firestore.js";
+// ★追加：enableIndexedDbPersistence をインポート
+import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, writeBatch, query, where, arrayUnion, or, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-firestore.js";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-auth.js";
 
 const firebaseConfig = {
@@ -14,6 +15,19 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+
+// ==========================================
+// ★追加：ローカルキャッシュ（オフライン永続化）の有効化
+// 一度読み込んだデータをスマホ本体に保存し、次回から差分のみを通信します
+// ==========================================
+enableIndexedDbPersistence(db).catch((err) => {
+  if (err.code === 'failed-precondition') {
+    console.warn('複数タブで開かれているため、キャッシュ機能は1つのタブのみで有効になります。');
+  } else if (err.code === 'unimplemented') {
+    console.warn('お使いのブラウザはキャッシュ機能に対応していません。');
+  }
+});
+
 const auth = getAuth(app);
 auth.languageCode = 'ja';
 
@@ -26,6 +40,7 @@ let unsubscribeBooks = null;
 let unsubscribeCategories = null;
 let unsubscribeRecords = null;
 let selectedRecordForModal = null; 
+let currentMonthValue = ""; 
 
 function showToast(message) {
   const container = document.getElementById('toast-container');
@@ -85,9 +100,8 @@ document.getElementById('register-form').onsubmit = async (e) => {
 document.getElementById('logout-btn').onclick = () => { if(confirm("ログアウトしますか？")) signOut(auth); };
 
 // ==========================================
-// 2. マイページ（一覧・作成・参加・プロフィール設定）
+// 2. マイページ
 // ==========================================
-
 document.getElementById('profile-form').onsubmit = async (e) => {
   e.preventDefault();
   const newName = document.getElementById('nickname-input').value.trim();
@@ -95,7 +109,6 @@ document.getElementById('profile-form').onsubmit = async (e) => {
   
   try {
     await updateProfile(currentUser, { displayName: newName });
-    
     if (globalBooks.length > 0) {
       const batch = writeBatch(db);
       globalBooks.forEach(book => {
@@ -142,7 +155,6 @@ function subscribeToBooks() {
       const li = document.createElement('li');
       li.className = 'category-card book-card';
 
-      // ★修正：参加者一覧は表示せず、アイコンと家計簿名のみシンプルに表示
       li.innerHTML = `
         <div class="book-info-col">
           <div class="book-title-row">
@@ -189,12 +201,7 @@ document.getElementById('create-book-form').onsubmit = async (e) => {
   if (nameInput.value.trim()) {
     const displayName = currentUser.displayName || currentUser.email.split('@')[0];
     await addDoc(collection(db, 'kakeibo_books'), { 
-      name: nameInput.value.trim(), 
-      uid: currentUser.uid, 
-      members: [currentUser.uid],
-      memberEmails: [currentUser.email], 
-      memberNames: { [currentUser.uid]: displayName },
-      createdAt: Date.now() 
+      name: nameInput.value.trim(), uid: currentUser.uid, members: [currentUser.uid], memberEmails: [currentUser.email], memberNames: { [currentUser.uid]: displayName }, createdAt: Date.now() 
     });
     nameInput.value = '';
     showToast('家計簿を作成しました');
@@ -208,15 +215,10 @@ document.getElementById('join-book-form').onsubmit = async (e) => {
     try {
       const displayName = currentUser.displayName || currentUser.email.split('@')[0];
       await updateDoc(doc(db, 'kakeibo_books', idInput.value.trim()), { 
-        members: arrayUnion(currentUser.uid),
-        memberEmails: arrayUnion(currentUser.email),
-        [`memberNames.${currentUser.uid}`]: displayName
+        members: arrayUnion(currentUser.uid), memberEmails: arrayUnion(currentUser.email), [`memberNames.${currentUser.uid}`]: displayName
       });
-      showToast('共有家計簿に参加しました！'); 
-      idInput.value = '';
-    } catch (err) { 
-      alert("参加に失敗しました。コードが正しいか、ルール設定が更新されているか確認してください。"); 
-    }
+      showToast('共有家計簿に参加しました！'); idInput.value = '';
+    } catch (err) { alert("参加に失敗しました。コードが正しいか、ルール設定が更新されているか確認してください。"); }
   }
 };
 
@@ -232,6 +234,7 @@ function openKakeibo(bookId, bookName) {
   document.getElementById('current-book-members-display').textContent = `👥 参加者: ${memberText}`;
   
   showScreen('screen-kakeibo');
+  
   subscribeToKakeiboData(); 
 }
 
@@ -243,14 +246,33 @@ document.getElementById('back-to-mypage-btn').onclick = () => {
 };
 
 // ==========================================
-// 3. データ同期
+// 3. データ同期 ＆ 月めくりロジック（課金対策）
 // ==========================================
+const globalMonthInput = document.getElementById('global-month-input');
+
+function changeMonth(offset) {
+  const [y, m] = currentMonthValue.split('-');
+  let date = new Date(parseInt(y, 10), parseInt(m, 10) - 1 + offset, 1);
+  const newY = date.getFullYear();
+  const newM = String(date.getMonth() + 1).padStart(2, '0');
+  
+  currentMonthValue = `${newY}-${newM}`;
+  globalMonthInput.value = currentMonthValue;
+  
+  subscribeToRecords();
+}
+
+document.getElementById('prev-month-btn').onclick = () => changeMonth(-1);
+document.getElementById('next-month-btn').onclick = () => changeMonth(1);
+globalMonthInput.addEventListener('change', (e) => {
+  currentMonthValue = e.target.value;
+  subscribeToRecords();
+});
+
 function subscribeToKakeiboData() {
   if (!currentUser || !currentBookId) return;
 
   const catQuery = query(collection(db, 'kakeibo_v2_categories'), where('bookId', '==', currentBookId));
-  const recQuery = query(collection(db, 'kakeibo_v2_records'), where('bookId', '==', currentBookId));
-
   unsubscribeCategories = onSnapshot(catQuery, (snapshot) => {
     globalCategories = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     if (globalCategories.length === 0) { initializeDefaultCategories(); return; }
@@ -258,8 +280,35 @@ function subscribeToKakeiboData() {
     displayCategories(); updateCategorySelect();
   });
 
-  unsubscribeRecords = onSnapshot(recQuery, (snapshot) => {
+  subscribeToRecords();
+}
+
+function subscribeToRecords() {
+  if (!currentBookId) return;
+  
+  if (unsubscribeRecords) {
+    unsubscribeRecords();
+  }
+
+  const [y, m] = currentMonthValue.split('-');
+  const year = parseInt(y, 10);
+  const month = parseInt(m, 10);
+  const lastDay = new Date(year, month, 0).getDate(); 
+  
+  const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+  const endDate = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+  const recQuery = query(
+    collection(db, 'kakeibo_v2_records'), 
+    where('bookId', '==', currentBookId),
+    where('date', '>=', startDate),
+    where('date', '<=', endDate)
+  );
+
+  unsubscribeRecords = onSnapshot(recQuery, { includeMetadataChanges: true }, (snapshot) => {
+    // 取得したデータは常に「今見ている月」の分だけになる（キャッシュがあればキャッシュから即表示）
     globalRecords = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    
     displayRecords();
     displaySummary();
     
@@ -287,6 +336,11 @@ function subscribeToKakeiboData() {
         closeDailyModal();
       }
     }
+  }, (error) => {
+    console.error("データ取得エラー:", error);
+    if(error.message.includes('index')) {
+      alert("データベースの最適化設定（インデックス作成）が必要です。\n開発者にコンソールのエラーログを確認してもらってください。");
+    }
   });
 }
 
@@ -295,12 +349,19 @@ function subscribeToKakeiboData() {
 // ==========================================
 const navRecord = document.getElementById('nav-record'), navSummary = document.getElementById('nav-summary'), navSettings = document.getElementById('nav-settings');
 const viewRecord = document.getElementById('view-record'), viewSummary = document.getElementById('view-summary'), viewSettings = document.getElementById('view-settings');
+const monthSelectorContainer = document.getElementById('month-selector-container');
 
 function switchView(showView, activeBtn) {
   [viewRecord, viewSummary, viewSettings].forEach(v => v.classList.add('hidden'));
   [navRecord, navSummary, navSettings].forEach(b => b.classList.remove('active'));
   showView.classList.remove('hidden'); activeBtn.classList.add('active');
-  if (showView === viewSummary) displaySummary();
+  
+  if (showView === viewSettings) {
+    monthSelectorContainer.classList.add('hidden');
+  } else {
+    monthSelectorContainer.classList.remove('hidden');
+    if (showView === viewSummary) displaySummary();
+  }
 }
 navRecord.onclick = () => switchView(viewRecord, navRecord);
 navSummary.onclick = () => switchView(viewSummary, navSummary);
@@ -375,7 +436,6 @@ categoryForm.addEventListener('submit', async (e) => {
 // --- 支出記録（保存とリスト表示） ---
 const form = document.getElementById('kakeibo-form');
 const recordList = document.getElementById('record-list');
-const recordMonthInput = document.getElementById('record-month');
 
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -386,14 +446,12 @@ form.addEventListener('submit', async (e) => {
   };
   await addDoc(collection(db, 'kakeibo_v2_records'), data);
   document.getElementById('amount').value = ''; document.getElementById('memo').value = '';
-  
   showToast('記録しました！');
 });
 
 function displayRecords() {
   recordList.innerHTML = '';
-  const month = recordMonthInput.value;
-  let displayData = globalRecords.filter(r => !month || r.date.startsWith(month));
+  let displayData = [...globalRecords];
   displayData.sort((a, b) => new Date(b.date) - new Date(a.date));
 
   const grouped = {};
@@ -423,7 +481,6 @@ function displayRecords() {
     recordList.appendChild(li);
   });
 }
-recordMonthInput.addEventListener('change', displayRecords);
 
 // ==========================================
 // 5. モーダル操作群
@@ -569,12 +626,10 @@ document.getElementById('modal-delete-btn').onclick = async () => {
 // 6. 集計・円グラフ
 // ==========================================
 let summaryChart = null;
-const summaryMonthInput = document.getElementById('summary-month');
 const chartTypeSelect = document.getElementById('chart-type');
 
 function displaySummary() {
-  const month = summaryMonthInput.value;
-  const filtered = globalRecords.filter(r => r.date.startsWith(month));
+  const filtered = globalRecords;
   const totals = { fixed: 0, variable: 0, cats: {} };
 
   filtered.forEach(r => {
@@ -614,15 +669,19 @@ function drawChart(labels, data) {
   if (summaryChart) summaryChart.destroy();
   summaryChart = new Chart(ctx, { type: 'doughnut', data: { labels, datasets: [{ data, backgroundColor: ['#3D405B', '#575A7B', '#71759B', '#E07A5F', '#E8937E', '#F1AC9D', '#81B29A', '#F2CC8F', '#6F7C85'], borderWidth: 2, borderColor: '#ffffff' }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } } });
 }
-summaryMonthInput.addEventListener('change', displaySummary);
+
 chartTypeSelect.addEventListener('change', displaySummary);
 
 // ==========================================
 // 7. アプリ初期化
 // ==========================================
 document.addEventListener('DOMContentLoaded', () => {
-  const d = new Date(); const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; const month = today.substring(0, 7);
-  document.getElementById('date').value = today; summaryMonthInput.value = month; recordMonthInput.value = month;
+  const d = new Date(); 
+  const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  
+  document.getElementById('date').value = today;
+  currentMonthValue = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  globalMonthInput.value = currentMonthValue;
 
   const updateOrder = async (listId) => {
     const batch = writeBatch(db); let i = 0;
